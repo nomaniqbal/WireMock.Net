@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -39,7 +41,7 @@ internal static class WebhookMapper
 
             if (!Enum.TryParse<ReplaceNodeOptions>(model.Request.TransformerReplaceNodeOptions, out var option))
             {
-                option = ReplaceNodeOptions.Evaluate;
+                option = ReplaceNodeOptions.EvaluateAndTryToConvert;
             }
             webhook.Request.TransformerReplaceNodeOptions = option;
         }

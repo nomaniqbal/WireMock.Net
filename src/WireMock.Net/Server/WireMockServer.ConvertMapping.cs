@@ -1,4 +1,7 @@
+// Copyright © WireMock.Net
+
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Stef.Validation;
 using WireMock.Admin.Mappings;
@@ -14,7 +17,7 @@ namespace WireMock.Server;
 
 public partial class WireMockServer
 {
-    private void ConvertMappingsAndRegisterAsRespondProvider(MappingModel[] mappingModels, string? path = null)
+    private void ConvertMappingsAndRegisterAsRespondProvider(IReadOnlyList<MappingModel> mappingModels, string? path = null)
     {
         var duplicateGuids = mappingModels
             .Where(m => m.Guid != null)
@@ -33,20 +36,16 @@ public partial class WireMockServer
         }
     }
 
-    private Guid? ConvertMappingAndRegisterAsRespondProvider(MappingModel mappingModel, Guid? guid = null, string? path = null)
+    private Guid ConvertMappingAndRegisterAsRespondProvider(MappingModel mappingModel, Guid? guid = null, string? path = null)
     {
         Guard.NotNull(mappingModel);
-        Guard.NotNull(mappingModel.Request, nameof(mappingModel.Request));
-        Guard.NotNull(mappingModel.Response, nameof(mappingModel.Response));
+        Guard.NotNull(mappingModel.Request);
+        Guard.NotNull(mappingModel.Response);
 
-        var requestBuilder = InitRequestBuilder(mappingModel.Request, true);
-        if (requestBuilder == null)
-        {
-            return null;
-        }
+        var requestBuilder = InitRequestBuilder(mappingModel.Request);
 
         var respondProvider = Given(requestBuilder, mappingModel.SaveToFile == true);
-        
+
         if (guid != null)
         {
             respondProvider = respondProvider.WithGuid(guid.Value);
@@ -107,7 +106,15 @@ public partial class WireMockServer
             respondProvider = respondProvider.WithWebhook(webhooks);
         }
 
-        respondProvider.WithWebhookFireAndForget(mappingModel.UseWebhooksFireAndForget ?? false);
+        if (mappingModel.UseWebhooksFireAndForget == true)
+        {
+            respondProvider.WithWebhookFireAndForget(mappingModel.UseWebhooksFireAndForget.Value);
+        }
+
+        if (mappingModel.Probability != null)
+        {
+            respondProvider.WithProbability(mappingModel.Probability.Value);
+        }
 
         var responseBuilder = InitResponseBuilder(mappingModel.Response);
         respondProvider.RespondWith(responseBuilder);
@@ -115,9 +122,9 @@ public partial class WireMockServer
         return respondProvider.Guid;
     }
 
-    private IRequestBuilder? InitRequestBuilder(RequestModel requestModel, bool pathOrUrlRequired)
+    private IRequestBuilder InitRequestBuilder(RequestModel requestModel)
     {
-        IRequestBuilder requestBuilder = Request.Create();
+        var requestBuilder = Request.Create();
 
         if (requestModel.ClientIP != null)
         {
@@ -135,13 +142,11 @@ public partial class WireMockServer
             }
         }
 
-        bool pathOrUrlMatchersValid = false;
         if (requestModel.Path != null)
         {
             if (requestModel.Path is string path)
             {
                 requestBuilder = requestBuilder.WithPath(path);
-                pathOrUrlMatchersValid = true;
             }
             else
             {
@@ -150,7 +155,6 @@ public partial class WireMockServer
                 {
                     var matchOperator = StringUtils.ParseMatchOperator(pathModel.MatchOperator);
                     requestBuilder = requestBuilder.WithPath(matchOperator, pathModel.Matchers.Select(_matcherMapper.Map).OfType<IStringMatcher>().ToArray());
-                    pathOrUrlMatchersValid = true;
                 }
             }
         }
@@ -159,7 +163,6 @@ public partial class WireMockServer
             if (requestModel.Url is string url)
             {
                 requestBuilder = requestBuilder.WithUrl(url);
-                pathOrUrlMatchersValid = true;
             }
             else
             {
@@ -168,15 +171,8 @@ public partial class WireMockServer
                 {
                     var matchOperator = StringUtils.ParseMatchOperator(urlModel.MatchOperator);
                     requestBuilder = requestBuilder.WithUrl(matchOperator, urlModel.Matchers.Select(_matcherMapper.Map).OfType<IStringMatcher>().ToArray());
-                    pathOrUrlMatchersValid = true;
                 }
             }
-        }
-
-        if (pathOrUrlRequired && !pathOrUrlMatchersValid)
-        {
-            _settings.Logger.Error("Path or Url matcher is missing for this mapping, this mapping will not be added.");
-            return null;
         }
 
         if (requestModel.Methods != null)
@@ -184,6 +180,11 @@ public partial class WireMockServer
             var matchBehaviour = requestModel.MethodsRejectOnMatch == true ? MatchBehaviour.RejectOnMatch : MatchBehaviour.AcceptOnMatch;
             var matchOperator = StringUtils.ParseMatchOperator(requestModel.MethodsMatchOperator);
             requestBuilder = requestBuilder.UsingMethod(matchBehaviour, matchOperator, requestModel.Methods);
+        }
+
+        if (requestModel.HttpVersion != null)
+        {
+            requestBuilder = requestBuilder.WithHttpVersion(requestModel.HttpVersion);
         }
 
         if (requestModel.Headers != null)
@@ -205,11 +206,11 @@ public partial class WireMockServer
         {
             foreach (var cookieModel in requestModel.Cookies.Where(c => c.Matchers != null))
             {
-               requestBuilder = requestBuilder.WithCookie(
-                    cookieModel.Name,
-                    cookieModel.IgnoreCase == true,
-                    cookieModel.RejectOnMatch == true ? MatchBehaviour.RejectOnMatch : MatchBehaviour.AcceptOnMatch,
-                    cookieModel.Matchers!.Select(_matcherMapper.Map).OfType<IStringMatcher>().ToArray());
+                requestBuilder = requestBuilder.WithCookie(
+                     cookieModel.Name,
+                     cookieModel.IgnoreCase == true,
+                     cookieModel.RejectOnMatch == true ? MatchBehaviour.RejectOnMatch : MatchBehaviour.AcceptOnMatch,
+                     cookieModel.Matchers!.Select(_matcherMapper.Map).OfType<IStringMatcher>().ToArray());
             }
         }
 
@@ -217,7 +218,7 @@ public partial class WireMockServer
         {
             foreach (var paramModel in requestModel.Params.Where(p => p is { Matchers: { } }))
             {
-                bool ignoreCase = paramModel.IgnoreCase == true;
+                var ignoreCase = paramModel.IgnoreCase == true;
                 requestBuilder = requestBuilder.WithParam(paramModel.Name, ignoreCase, paramModel.Matchers!.Select(_matcherMapper.Map).OfType<IStringMatcher>().ToArray());
             }
         }
@@ -237,7 +238,7 @@ public partial class WireMockServer
 
     private static IResponseBuilder InitResponseBuilder(ResponseModel responseModel)
     {
-        IResponseBuilder responseBuilder = Response.Create();
+        var responseBuilder = Response.Create();
 
         if (responseModel.Delay > 0)
         {
@@ -255,14 +256,16 @@ public partial class WireMockServer
                 transformerType = TransformerType.Handlebars;
             }
 
-            if (!Enum.TryParse<ReplaceNodeOptions>(responseModel.TransformerReplaceNodeOptions, out var option))
+            if (!Enum.TryParse<ReplaceNodeOptions>(responseModel.TransformerReplaceNodeOptions, out var replaceNodeOptions))
             {
-                option = ReplaceNodeOptions.Evaluate;
+                replaceNodeOptions = ReplaceNodeOptions.EvaluateAndTryToConvert;
             }
+
             responseBuilder = responseBuilder.WithTransformer(
                 transformerType,
                 responseModel.UseTransformerForBodyAsFile == true,
-                option);
+                replaceNodeOptions
+            );
         }
 
         if (!string.IsNullOrEmpty(responseModel.ProxyUrl))
@@ -271,12 +274,8 @@ public partial class WireMockServer
             {
                 Url = responseModel.ProxyUrl!,
                 ClientX509Certificate2ThumbprintOrSubjectName = responseModel.X509Certificate2ThumbprintOrSubjectName,
-                WebProxySettings = responseModel.WebProxy != null ? new WebProxySettings
-                {
-                    Address = responseModel.WebProxy.Address,
-                    UserName = responseModel.WebProxy.UserName,
-                    Password = responseModel.WebProxy.Password
-                } : null
+                WebProxySettings = TinyMapperUtils.Instance.Map(responseModel.WebProxy),
+                ReplaceSettings = TinyMapperUtils.Instance.Map(responseModel.ProxyUrlReplaceSettings)
             };
 
             return responseBuilder.WithProxy(proxyAndRecordSettings);

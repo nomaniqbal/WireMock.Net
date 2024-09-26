@@ -1,6 +1,11 @@
+// Copyright © WireMock.Net
+
 using System.Net.Http.Headers;
 using AnyOfTypes;
+using Stef.Validation;
+using WireMock.Extensions;
 using WireMock.Models;
+using WireMock.Util;
 
 namespace WireMock.Matchers;
 
@@ -17,7 +22,7 @@ public class ContentTypeMatcher : WildcardMatcher
     /// </summary>
     /// <param name="pattern">The pattern.</param>
     /// <param name="ignoreCase">IgnoreCase (default false)</param>
-    public ContentTypeMatcher(AnyOf<string, StringPattern> pattern, bool ignoreCase = false) : this(new[] { pattern }, ignoreCase)
+    public ContentTypeMatcher(AnyOf<string, StringPattern> pattern, bool ignoreCase = false) : this([pattern], ignoreCase)
     {
     }
 
@@ -27,7 +32,8 @@ public class ContentTypeMatcher : WildcardMatcher
     /// <param name="matchBehaviour">The match behaviour.</param>
     /// <param name="pattern">The pattern.</param>
     /// <param name="ignoreCase">IgnoreCase (default false)</param>
-    public ContentTypeMatcher(MatchBehaviour matchBehaviour, AnyOf<string, StringPattern> pattern, bool ignoreCase = false) : this(matchBehaviour, new[] { pattern }, ignoreCase)
+    public ContentTypeMatcher(MatchBehaviour matchBehaviour, AnyOf<string, StringPattern> pattern, bool ignoreCase = false) : this(matchBehaviour,
+        [pattern], ignoreCase)
     {
     }
 
@@ -46,15 +52,13 @@ public class ContentTypeMatcher : WildcardMatcher
     /// <param name="matchBehaviour">The match behaviour.</param>
     /// <param name="patterns">The patterns.</param>
     /// <param name="ignoreCase">IgnoreCase (default false)</param>
-    /// <param name="throwException">Throw an exception when the internal matching fails because of invalid input.</param>
-    public ContentTypeMatcher(MatchBehaviour matchBehaviour, AnyOf<string, StringPattern>[] patterns, bool ignoreCase = false, bool throwException = false) :
-        base(matchBehaviour, patterns, ignoreCase, throwException)
+    public ContentTypeMatcher(MatchBehaviour matchBehaviour, AnyOf<string, StringPattern>[] patterns, bool ignoreCase = false) : base(matchBehaviour, patterns, ignoreCase)
     {
-        _patterns = patterns;
+        _patterns = Guard.NotNull(patterns);
     }
 
-    /// <inheritdoc cref="RegexMatcher.IsMatch"/>
-    public override double IsMatch(string? input)
+    /// <inheritdoc />
+    public override MatchResult IsMatch(string? input)
     {
         if (string.IsNullOrEmpty(input) || !MediaTypeHeaderValue.TryParse(input, out var contentType))
         {
@@ -64,12 +68,23 @@ public class ContentTypeMatcher : WildcardMatcher
         return base.IsMatch(contentType.MediaType);
     }
 
-    /// <inheritdoc cref="IStringMatcher.GetPatterns"/>
+    /// <inheritdoc />
     public override AnyOf<string, StringPattern>[] GetPatterns()
     {
         return _patterns;
     }
 
-    /// <inheritdoc cref="IMatcher.Name"/>
-    public override string Name => "ContentTypeMatcher";
+    /// <inheritdoc />
+    public override string Name => nameof(ContentTypeMatcher);
+
+    /// <inheritdoc />
+    public override string GetCSharpCodeArguments()
+    {
+        return $"new {Name}" +
+               $"(" +
+               $"{MatchBehaviour.GetFullyQualifiedEnumValue()}, " +
+               $"{MappingConverterUtils.ToCSharpCodeArguments(_patterns)}, " +
+               $"{CSharpFormatter.ToCSharpBooleanLiteral(IgnoreCase)}" +
+               $")";
+    }
 }

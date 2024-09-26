@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -29,6 +31,11 @@ public partial class WireMockServer
         if (settings.StartAdminInterface == true)
         {
             proxyRespondProvider.AtPriority(WireMockConstants.ProxyPriority);
+        }
+
+        if(settings.ProxyAndRecordSettings.ProxyAll)
+        {
+            proxyRespondProvider.AtPriority(int.MinValue);
         }
 
         proxyRespondProvider.RespondWith(new ProxyAsyncResponseProvider(ProxyAndRecordAsync, settings));

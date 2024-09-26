@@ -1,9 +1,10 @@
-namespace WireMock.Org.Abstractions
-{
-    public class PostAdminMappingsFindByMetadataResult
-    {
-        public Mappings Mappings { get; set; }
+// Copyright © WireMock.Net
 
-        public Meta Meta { get; set; }
-    }
+namespace WireMock.Org.Abstractions;
+
+public class PostAdminMappingsFindByMetadataResult
+{
+    public Mapping[] Mappings { get; set; }
+
+    public Meta Meta { get; set; }
 }

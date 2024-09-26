@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using JetBrains.Annotations;
 
 namespace WireMock.Settings;
@@ -7,6 +9,11 @@ namespace WireMock.Settings;
 /// </summary>
 public class ProxyAndRecordSettings : HttpClientSettings
 {
+    /// <summary>
+    /// Default prefix value for saved mapping file
+    /// </summary>
+    public const string DefaultPrefixForSavedMappingFile = "Proxy Mapping for ";
+
     /// <summary>
     /// The URL to proxy.
     /// </summary>
@@ -70,6 +77,12 @@ public class ProxyAndRecordSettings : HttpClientSettings
     public string[]? ExcludedCookies { get; set; }
 
     /// <summary>
+    /// Replace Settings
+    /// </summary>
+    [PublicAPI]
+    public ProxyUrlReplaceSettings? ReplaceSettings { get; set; }
+
+    /// <summary>
     /// Prefer the Proxy Mapping over the saved Mapping (in case SaveMapping is set to <c>true</c>).
     /// </summary>
     //[PublicAPI]
@@ -88,4 +101,15 @@ public class ProxyAndRecordSettings : HttpClientSettings
     /// Append an unique GUID to the filename from the saved mapping file.
     /// </summary>
     public bool AppendGuidToSavedMappingFile { get; set; }
+
+    /// <summary>
+    /// Set prefix for saved mapping file.
+    /// </summary>
+    public string PrefixForSavedMappingFile { get; set; } = DefaultPrefixForSavedMappingFile;
+
+    /// <summary>
+    /// Proxy all Api calls, irrespective of any condition
+    /// </summary>
+    [PublicAPI]
+    public bool ProxyAll { get; set; }
 }

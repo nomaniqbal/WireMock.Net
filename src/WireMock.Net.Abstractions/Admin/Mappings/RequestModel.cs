@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System.Collections.Generic;
 
 namespace WireMock.Admin.Mappings;
@@ -27,6 +29,11 @@ public class RequestModel
     /// The methods
     /// </summary>
     public string[]? Methods { get; set; }
+
+    /// <summary>
+    /// The HTTP Version
+    /// </summary>
+    public string? HttpVersion { get; set; }
 
     /// <summary>
     /// Reject on match for Methods.

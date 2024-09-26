@@ -1,7 +1,11 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Linq;
 using AnyOfTypes;
+using WireMock.Extensions;
 using WireMock.Models;
+using WireMock.Util;
 
 namespace WireMock.Matchers;
 
@@ -11,14 +15,14 @@ namespace WireMock.Matchers;
 /// <seealso cref="IObjectMatcher" />
 public class NotNullOrEmptyMatcher : IObjectMatcher, IStringMatcher
 {
-    /// <inheritdoc cref="IMatcher.Name"/>
-    public string Name => "NotNullOrEmptyMatcher";
+    /// <inheritdoc />
+    public string Name => nameof(NotNullOrEmptyMatcher);
 
-    /// <inheritdoc cref="IMatcher.MatchBehaviour"/>
+    /// <inheritdoc />
     public MatchBehaviour MatchBehaviour { get; }
 
-    /// <inheritdoc cref="IMatcher.ThrowException"/>
-    public bool ThrowException { get; }
+    /// <inheritdoc />
+    public object Value { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NotNullOrEmptyMatcher"/> class.
@@ -27,10 +31,11 @@ public class NotNullOrEmptyMatcher : IObjectMatcher, IStringMatcher
     public NotNullOrEmptyMatcher(MatchBehaviour matchBehaviour = MatchBehaviour.AcceptOnMatch)
     {
         MatchBehaviour = matchBehaviour;
+        Value = string.Empty;
     }
 
-    /// <inheritdoc cref="IObjectMatcher.IsMatch"/>
-    public double IsMatch(object? input)
+    /// <inheritdoc />
+    public MatchResult IsMatch(object? input)
     {
         bool match;
 
@@ -52,20 +57,29 @@ public class NotNullOrEmptyMatcher : IObjectMatcher, IStringMatcher
         return MatchBehaviourHelper.Convert(MatchBehaviour, MatchScores.ToScore(match));
     }
 
-    /// <inheritdoc cref="IStringMatcher.IsMatch"/>
-    public double IsMatch(string? input)
+    /// <inheritdoc />
+    public MatchResult IsMatch(string? input)
     {
         var match = !string.IsNullOrEmpty(input);
 
         return MatchBehaviourHelper.Convert(MatchBehaviour, MatchScores.ToScore(match));
     }
 
-    /// <inheritdoc cref="IStringMatcher.GetPatterns"/>
+    /// <inheritdoc />
     public AnyOf<string, StringPattern>[] GetPatterns()
     {
         return EmptyArray<AnyOf<string, StringPattern>>.Value;
     }
 
     /// <inheritdoc />
-    public MatchOperator MatchOperator { get; } = MatchOperator.Or;
+    public MatchOperator MatchOperator => MatchOperator.Or;
+
+    /// <inheritdoc />
+    public string GetCSharpCodeArguments()
+    {
+        return $"new {Name}" +
+               $"(" +
+               $"{MatchBehaviour.GetFullyQualifiedEnumValue()}" +
+               $")";
+    }
 }

@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 namespace WireMock.Admin.Settings;
 
 [FluentBuilder.AutoGenerateBuilder]
@@ -68,4 +70,19 @@ public class ProxyAndRecordSettingsModel
     /// Append an unique GUID to the filename from the saved mapping file.
     /// </summary>
     public bool AppendGuidToSavedMappingFile { get; set; }
+
+    /// <summary>
+    /// Set prefix for saved mapping file.
+    /// </summary>
+    public string PrefixForSavedMappingFile { get; set; }
+
+    /// <summary>
+    /// Defines the Replace Settings.
+    /// </summary>
+    public ProxyUrlReplaceSettingsModel? ReplaceSettings { get; set; }
+
+    /// <summary>
+    /// Proxy all Api calls, irrespective of any condition
+    /// </summary>
+    public bool ProxyAll { get; set; } = false;
 }

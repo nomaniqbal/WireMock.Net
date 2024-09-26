@@ -1,9 +1,9 @@
+// Copyright © WireMock.Net and mock4net by Alexandre Victoor
+
 // This source file is based on mock4net by Alexandre Victoor which is licensed under the Apache 2.0 License.
 // For more details see 'mock4net/LICENSE.txt' and 'mock4net/readme.md' in this project root.
 using System;
 using System.Collections.Generic;
-using JsonConverter.Abstractions;
-using Newtonsoft.Json;
 using Stef.Validation;
 using WireMock.Matchers;
 using WireMock.Matchers.Request;
@@ -37,19 +37,7 @@ public partial class Request
     /// <inheritdoc />
     public IRequestBuilder WithBodyAsJson(object body, MatchBehaviour matchBehaviour = MatchBehaviour.AcceptOnMatch)
     {
-        var bodyAsJsonString = JsonConvert.SerializeObject(body);
-        _requestMatchers.Add(new RequestMessageBodyMatcher(matchBehaviour, bodyAsJsonString));
-        return this;
-    }
-
-    /// <inheritdoc />
-    public IRequestBuilder WithBodyAsJson(object body, IJsonConverter converter, JsonConverterOptions? options = null, MatchBehaviour matchBehaviour = MatchBehaviour.AcceptOnMatch)
-    {
-        Guard.NotNull(converter);
-
-        var bodyAsJsonString = converter.Serialize(body, options);
-        _requestMatchers.Add(new RequestMessageBodyMatcher(matchBehaviour, bodyAsJsonString));
-        return this;
+        return WithBody(new IMatcher[] { new JsonMatcher(matchBehaviour, body) });
     }
 
     /// <inheritdoc />
@@ -108,5 +96,11 @@ public partial class Request
     {
         _requestMatchers.Add(new RequestMessageBodyMatcher(Guard.NotNull(func)));
         return this;
+    }
+
+    /// <inheritdoc />
+    public IRequestBuilder WithBodyAsGraphQLSchema(string body, MatchBehaviour matchBehaviour = MatchBehaviour.AcceptOnMatch)
+    {
+        return WithGraphQLSchema(body, matchBehaviour);
     }
 }

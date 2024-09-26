@@ -1,5 +1,6 @@
+// Copyright © WireMock.Net
+
 using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using WireMock.Matchers.Request;
 using WireMock.Models;
@@ -70,12 +71,12 @@ public interface IMapping
     int? StateTimes { get; }
 
     /// <summary>
-    /// The Request matcher.
+    /// The RequestMatcher.
     /// </summary>
     IRequestMatcher RequestMatcher { get; }
 
     /// <summary>
-    /// The Provider.
+    /// The ResponseProvider.
     /// </summary>
     IResponseProvider Provider { get; }
 
@@ -121,7 +122,7 @@ public interface IMapping
     /// <summary>
     /// Use Fire and Forget for the defined webhook(s). [Optional]
     /// </summary>
-    bool? UseWebhooksFireAndForget { get; set; }
+    bool? UseWebhooksFireAndForget { get; }
 
     /// <summary>
     /// Data Object which can be used when WithTransformer is used.
@@ -130,7 +131,17 @@ public interface IMapping
     /// lookup data "1"
     /// </example>
     /// </summary>
-    object? Data { get; set; }
+    object? Data { get; }
+
+    /// <summary> 
+    /// The probability when this request should be matched. Value is between 0 and 1. [Optional]
+    /// </summary>
+    double? Probability { get; }
+
+    /// <summary>
+    /// The Grpc ProtoDefinition which is used for this mapping (request and response). [Optional]
+    /// </summary>
+    IdOrText? ProtoDefinition { get; }
 
     /// <summary>
     /// ProvideResponseAsync
@@ -146,4 +157,44 @@ public interface IMapping
     /// <param name="nextState">The Next State.</param>
     /// <returns>The <see cref="IRequestMatchResult"/>.</returns>
     IRequestMatchResult GetRequestMatchResult(IRequestMessage requestMessage, string? nextState);
+
+    /// <summary>
+    /// Define the scenario.
+    /// </summary>
+    /// <param name="scenario">The scenario.</param>
+    /// <returns>The <see cref="IMapping"/>.</returns>
+    IMapping WithScenario(string scenario);
+
+    /// <summary>
+    /// Define the probability when this request should be matched. [Optional]
+    /// </summary>
+    /// <param name="probability">The probability.</param>
+    /// <returns>The <see cref="IMapping"/>.</returns>
+    IMapping WithProbability(double probability);
+
+    /// <summary>
+    /// Define a Grpc ProtoDefinition which is used for this mapping (request and response).
+    /// </summary>
+    /// <param name="protoDefinition">The proto definition as text.</param>
+    /// <returns>The <see cref="IMapping"/>.</returns>
+    IMapping WithProtoDefinition(IdOrText protoDefinition);
 }
+
+/*
+    executionConditionState">State in which the current mapping can occur. [Optional]
+    nextState">The next state which will occur after the current mapping execution. [Optional]
+    stateTimes">Only when the current state is executed this number, the next state which will occur. [Optional]
+    webhooks">The Webhooks. [Optional]
+    useWebhooksFireAndForget">Use Fire and Forget for the defined webhook(s). [Optional]
+    timeSettings">The TimeSettings. [Optional]
+    data">The data object. [Optional]
+    
+ 
+    string? executionConditionState,
+    string? nextState,
+    int? stateTimes,
+    IWebhook[]? webhooks,
+    bool? useWebhooksFireAndForget,
+    ITimeSettings? timeSettings,
+    object? data,
+*/

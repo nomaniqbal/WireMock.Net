@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
@@ -11,6 +13,7 @@ using WireMock.Matchers;
 using WireMock.RegularExpressions;
 using WireMock.Types;
 using System.Globalization;
+using WireMock.Models;
 #if USE_ASPNETCORE
 using Microsoft.Extensions.DependencyInjection;
 #endif
@@ -22,6 +25,8 @@ namespace WireMock.Settings;
 /// </summary>
 public class WireMockServerSettings
 {
+    internal const int DefaultStartTimeout = 10000;
+
     /// <summary>
     /// Gets or sets the http port.
     /// </summary>
@@ -40,6 +45,12 @@ public class WireMockServerSettings
     /// </summary>
     [PublicAPI]
     public HostingScheme? HostingScheme { get; set; }
+
+    /// <summary>
+    /// Gets or sets to use HTTP 2 (used for Grpc).
+    /// </summary>
+    [PublicAPI]
+    public bool? UseHttp2 { get; set; }
 
     /// <summary>
     /// Gets or sets whether to start admin interface.
@@ -81,7 +92,7 @@ public class WireMockServerSettings
     /// StartTimeout
     /// </summary>
     [PublicAPI]
-    public int StartTimeout { get; set; } = 10000;
+    public int StartTimeout { get; set; } = DefaultStartTimeout;
 
     /// <summary>
     /// Allow Partial Mapping (default set to false).
@@ -220,12 +231,6 @@ public class WireMockServerSettings
     public bool? HandleRequestsSynchronously { get; set; }
 
     /// <summary>
-    /// Throw an exception when the <see cref="IMatcher"/> fails because of invalid input. (default set to <c>false</c>).
-    /// </summary>
-    [PublicAPI]
-    public bool? ThrowExceptionWhenMatcherFails { get; set; }
-
-    /// <summary>
     /// If https is used, these settings can be used to configure the CertificateSettings in case a custom certificate instead the default .NET certificate should be used.
     ///
     /// X509StoreName and X509StoreLocation should be defined
@@ -242,16 +247,16 @@ public class WireMockServerSettings
     public bool CustomCertificateDefined => CertificateSettings?.IsDefined == true;
 
 #if USE_ASPNETCORE
-        /// <summary>
-        /// Client certificate mode for the server
-        /// </summary>
-        [PublicAPI]
-        public ClientCertificateMode ClientCertificateMode { get; set; }
+    /// <summary>
+    /// Client certificate mode for the server
+    /// </summary>
+    [PublicAPI]
+    public ClientCertificateMode ClientCertificateMode { get; set; }
 
-        /// <summary>
-        /// Whether to accept any client certificate
-        /// </summary>
-        public bool AcceptAnyClientCertificate { get; set; }
+    /// <summary>
+    /// Whether to accept any client certificate
+    /// </summary>
+    public bool AcceptAnyClientCertificate { get; set; }
 #endif
 
     /// <summary>
@@ -305,4 +310,23 @@ public class WireMockServerSettings
     /// </summary>
 	[JsonIgnore]
     public CultureInfo Culture { get; set; } = CultureInfo.CurrentCulture;
+
+    /// <summary>
+    /// A list of Grpc ProtoDefinitions which can be used.
+    /// </summary>
+    [PublicAPI]
+    public Dictionary<string, string>? ProtoDefinitions { get; set; }
+
+    /// <summary>
+    /// A list of GraphQL Schemas which can be used.
+    /// </summary>
+    [PublicAPI]
+    public Dictionary<string, GraphQLSchemaDetails>? GraphQLSchemas { get; set; }
+
+    /// <summary>
+    /// The admin path to use for accessing the Admin REST interface.
+    /// If not set <c>__/admin</c> is used.
+    /// </summary>
+    [PublicAPI]
+    public string? AdminPath { get; set; }
 }

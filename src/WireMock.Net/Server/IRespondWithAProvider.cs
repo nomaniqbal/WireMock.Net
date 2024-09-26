@@ -1,7 +1,12 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
+using System.Net;
 using WireMock.Models;
+using WireMock.ResponseBuilders;
 using WireMock.ResponseProviders;
+using WireMock.Settings;
 using WireMock.Types;
 
 namespace WireMock.Server;
@@ -22,6 +27,27 @@ public interface IRespondWithAProvider
     /// <param name="guid">The unique identifier.</param>
     /// <returns>The <see cref="IRespondWithAProvider"/>.</returns>
     IRespondWithAProvider WithGuid(Guid guid);
+
+    /// <summary>
+    /// Define a unique identifier for this mapping.
+    /// </summary>
+    /// <param name="guid">The unique identifier.</param>
+    /// <returns>The <see cref="IRespondWithAProvider"/>.</returns>
+    IRespondWithAProvider WithGuid(string guid);
+
+    /// <summary>
+    /// Define a unique identifier for this mapping.
+    /// </summary>
+    /// <param name="guid">The unique identifier.</param>
+    /// <returns>The <see cref="IRespondWithAProvider"/>.</returns>
+    IRespondWithAProvider DefineGuid(Guid guid);
+
+    /// <summary>
+    /// Define a unique identifier for this mapping.
+    /// </summary>
+    /// <param name="guid">The unique identifier.</param>
+    /// <returns>The <see cref="IRespondWithAProvider"/>.</returns>
+    IRespondWithAProvider DefineGuid(string guid);
 
     /// <summary>
     /// Define the TimeSettings for this mapping.
@@ -52,24 +78,49 @@ public interface IRespondWithAProvider
     IRespondWithAProvider WithPath(string path);
 
     /// <summary>
-    /// Define a unique identifier for this mapping.
-    /// </summary>
-    /// <param name="guid">The unique identifier.</param>
-    /// <returns>The <see cref="IRespondWithAProvider"/>.</returns>
-    IRespondWithAProvider WithGuid(string guid);
-
-    /// <summary>
     /// Define the priority for this mapping.
     /// </summary>
-    /// <param name="priority">The priority.</param>
+    /// <param name="priority">The priority. (A lower value means a higher priority.)</param>
     /// <returns>The <see cref="IRespondWithAProvider"/>.</returns>
     IRespondWithAProvider AtPriority(int priority);
 
     /// <summary>
-    /// The respond with.
+    /// RespondWith
     /// </summary>
     /// <param name="provider">The provider.</param>
     void RespondWith(IResponseProvider provider);
+
+    /// <summary>
+    /// RespondWith
+    /// </summary>
+    /// <param name="action">The action to use the fluent <see cref="IResponseBuilder"/>.</param>
+    void ThenRespondWith(Action<IResponseBuilder> action);
+
+    /// <summary>
+    /// RespondWith a status code 200 (OK);
+    /// </summary>
+    void ThenRespondWithOK();
+
+    /// <summary>
+    /// RespondWith a status code.
+    /// By default all status codes are allowed, to change this behaviour, see <inheritdoc cref="WireMockServerSettings.AllowOnlyDefinedHttpStatusCodeInResponse"/>.
+    /// </summary>
+    /// <param name="code">The code.</param>
+    void ThenRespondWithStatusCode(int code);
+
+    /// <summary>
+    /// RespondWith a status code.
+    /// By default all status codes are allowed, to change this behaviour, see <inheritdoc cref="WireMockServerSettings.AllowOnlyDefinedHttpStatusCodeInResponse"/>.
+    /// </summary>
+    /// <param name="code">The code.</param>
+    void ThenRespondWithStatusCode(string code);
+
+    /// <summary>
+    /// RespondWith a status code.
+    /// By default all status codes are allowed, to change this behaviour, see <inheritdoc cref="WireMockServerSettings.AllowOnlyDefinedHttpStatusCodeInResponse"/>.
+    /// </summary>
+    /// <param name="code">The code.</param>
+    void ThenRespondWithStatusCode(HttpStatusCode code);
 
     /// <summary>
     /// Sets the the scenario.
@@ -175,5 +226,30 @@ public interface IRespondWithAProvider
     /// lookup data "1"
     /// </example>
     /// </summary>
+    /// <returns>The <see cref="IRespondWithAProvider"/>.</returns>
     IRespondWithAProvider WithData(object data);
+
+    /// <summary>
+    /// Define the probability when this request should be matched. Value is between 0 and 1.
+    /// </summary>
+    /// <param name="probability">The probability when this request should be matched. Value is between 0 and 1.</param>
+    /// <returns>The <see cref="IRespondWithAProvider"/>.</returns>
+    IRespondWithAProvider WithProbability(double probability);
+
+    /// <summary>
+    /// Define a Grpc ProtoDefinition which is used for the request and the response.
+    /// This can be a ProtoDefinition as a string, or an id when the ProtoDefinitions are defined at the WireMockServer.
+    /// </summary>
+    /// <param name="protoDefinitionOrId">The proto definition as text or as id.</param>
+    /// <returns>The <see cref="IRespondWithAProvider"/>.</returns>
+    IRespondWithAProvider WithProtoDefinition(string protoDefinitionOrId);
+
+    /// <summary>
+    /// Define a GraphQL Schema which is used for the request and the response.
+    /// This can be a GraphQL Schema as a string, or an id when the GraphQL Schema are defined at the WireMockServer.
+    /// </summary>
+    /// <param name="graphQLSchemaOrId">The GraphQL Schema as text or as id.</param>
+    /// <param name="customScalars">A dictionary defining the custom scalars used in this schema. [optional]</param>
+    /// <returns>The <see cref="IRespondWithAProvider"/>.</returns>
+    IRespondWithAProvider WithGraphQLSchema(string graphQLSchemaOrId, IDictionary<string, Type>? customScalars = null);
 }

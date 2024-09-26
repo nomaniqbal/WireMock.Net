@@ -1,11 +1,14 @@
+// Copyright © WireMock.Net and mock4net by Alexandre Victoor
+
 // This source file is based on mock4net by Alexandre Victoor which is licensed under the Apache 2.0 License.
 // For more details see 'mock4net/LICENSE.txt' and 'mock4net/readme.md' in this project root.
 using System;
 using System.Collections.Generic;
-using JetBrains.Annotations;
+using System.Net;
 using Stef.Validation;
 using WireMock.Matchers.Request;
 using WireMock.Models;
+using WireMock.ResponseBuilders;
 using WireMock.ResponseProviders;
 using WireMock.Settings;
 using WireMock.Types;
@@ -18,6 +21,12 @@ namespace WireMock.Server;
 /// </summary>
 internal class RespondWithAProvider : IRespondWithAProvider
 {
+    private readonly RegistrationCallback _registrationCallback;
+    private readonly IRequestMatcher _requestMatcher;
+    private readonly WireMockServerSettings _settings;
+    private readonly IDateTimeUtils _dateTimeUtils;
+    private readonly bool _saveToFile;
+
     private int _priority;
     private string? _title;
     private string? _description;
@@ -26,13 +35,10 @@ internal class RespondWithAProvider : IRespondWithAProvider
     private string? _nextState;
     private string? _scenario;
     private int _timesInSameState = 1;
-    private readonly RegistrationCallback _registrationCallback;
-    private readonly IRequestMatcher _requestMatcher;
-    private readonly WireMockServerSettings _settings;
-    private readonly IDateTimeUtils _dateTimeUtils;
-    private readonly bool _saveToFile;
-
     private bool? _useWebhookFireAndForget;
+    private double? _probability;
+    private IdOrText? _protoDefinition;
+    private GraphQLSchemaDetails? _graphQLSchemaDetails;
 
     public Guid Guid { get; private set; }
 
@@ -69,13 +75,11 @@ internal class RespondWithAProvider : IRespondWithAProvider
         Guid = guidUtils.NewGuid();
     }
 
-    /// <summary>
-    /// The respond with.
-    /// </summary>
-    /// <param name="provider">The provider.</param>
+    /// <inheritdoc />
     public void RespondWith(IResponseProvider provider)
     {
-        var mapping = new Mapping(
+        var mapping = new Mapping
+        (
             Guid,
             _dateTimeUtils.UtcNow,
             _title,
@@ -92,13 +96,65 @@ internal class RespondWithAProvider : IRespondWithAProvider
             Webhooks,
             _useWebhookFireAndForget,
             TimeSettings,
-            Data);
+            Data
+        );
+
+        if (_probability != null)
+        {
+            mapping.WithProbability(_probability.Value);
+        }
+
+        if (_protoDefinition != null)
+        {
+            mapping.WithProtoDefinition(_protoDefinition.Value);
+        }
 
         _registrationCallback(mapping, _saveToFile);
     }
 
     /// <inheritdoc />
-    [PublicAPI]
+    public void ThenRespondWith(Action<IResponseBuilder> action)
+    {
+        var responseBuilder = Response.Create();
+
+        action(responseBuilder);
+
+        RespondWith(responseBuilder);
+    }
+
+    /// <inheritdoc />
+    public void ThenRespondWithOK()
+    {
+        var responseBuilder = Response.Create();
+
+        RespondWith(responseBuilder);
+    }
+
+    /// <inheritdoc />
+    public void ThenRespondWithStatusCode(int code)
+    {
+        var responseBuilder = Response.Create().WithStatusCode(code);
+
+        RespondWith(responseBuilder);
+    }
+
+    /// <inheritdoc />
+    public void ThenRespondWithStatusCode(string code)
+    {
+        var responseBuilder = Response.Create().WithStatusCode(code);
+
+        RespondWith(responseBuilder);
+    }
+
+    /// <inheritdoc />
+    public void ThenRespondWithStatusCode(HttpStatusCode code)
+    {
+        var responseBuilder = Response.Create().WithStatusCode(code);
+
+        RespondWith(responseBuilder);
+    }
+
+    /// <inheritdoc />
     public IRespondWithAProvider WithData(object data)
     {
         Data = data;
@@ -115,8 +171,19 @@ internal class RespondWithAProvider : IRespondWithAProvider
     public IRespondWithAProvider WithGuid(Guid guid)
     {
         Guid = guid;
-
         return this;
+    }
+
+    /// <inheritdoc />
+    public IRespondWithAProvider DefineGuid(Guid guid)
+    {
+        return WithGuid(guid);
+    }
+
+    /// <inheritdoc />
+    public IRespondWithAProvider DefineGuid(string guid)
+    {
+        return WithGuid(guid);
     }
 
     /// <inheritdoc />
@@ -131,15 +198,13 @@ internal class RespondWithAProvider : IRespondWithAProvider
     public IRespondWithAProvider WithDescription(string description)
     {
         _description = description;
-
         return this;
     }
 
-    /// <see cref="IRespondWithAProvider.WithPath"/>
+    /// <inheritdoc />
     public IRespondWithAProvider WithPath(string path)
     {
         _path = path;
-
         return this;
     }
 
@@ -147,15 +212,13 @@ internal class RespondWithAProvider : IRespondWithAProvider
     public IRespondWithAProvider AtPriority(int priority)
     {
         _priority = priority;
-
         return this;
     }
 
     /// <inheritdoc />
     public IRespondWithAProvider InScenario(string scenario)
     {
-        _scenario = scenario;
-
+        _scenario = Guard.NotNullOrWhiteSpace(scenario);
         return this;
     }
 
@@ -207,9 +270,7 @@ internal class RespondWithAProvider : IRespondWithAProvider
     /// <inheritdoc />
     public IRespondWithAProvider WithTimeSettings(ITimeSettings timeSettings)
     {
-        Guard.NotNull(timeSettings, nameof(timeSettings));
-
-        TimeSettings = timeSettings;
+        TimeSettings = Guard.NotNull(timeSettings);
 
         return this;
     }
@@ -217,10 +278,9 @@ internal class RespondWithAProvider : IRespondWithAProvider
     /// <inheritdoc />
     public IRespondWithAProvider WithWebhook(params IWebhook[] webhooks)
     {
-        Guard.HasNoNulls(webhooks, nameof(webhooks));
+        Guard.HasNoNulls(webhooks);
 
         Webhooks = webhooks;
-
         return this;
     }
 
@@ -281,6 +341,45 @@ internal class RespondWithAProvider : IRespondWithAProvider
     public IRespondWithAProvider WithWebhookFireAndForget(bool useWebhooksFireAndForget)
     {
         _useWebhookFireAndForget = useWebhooksFireAndForget;
+        return this;
+    }
+
+    public IRespondWithAProvider WithProbability(double probability)
+    {
+        _probability = Guard.Condition(probability, p => p is >= 0 and <= 1.0);
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IRespondWithAProvider WithProtoDefinition(string protoDefinitionOrId)
+    {
+        Guard.NotNullOrWhiteSpace(protoDefinitionOrId);
+
+        if (_settings.ProtoDefinitions?.TryGetValue(protoDefinitionOrId, out var protoDefinition) == true)
+        {
+            _protoDefinition = new (protoDefinitionOrId, protoDefinition);
+        }
+        else
+        {
+            _protoDefinition = new(null, protoDefinitionOrId);
+        }
+
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IRespondWithAProvider WithGraphQLSchema(string graphQLSchemaOrId, IDictionary<string, Type>? customScalars = null)
+    {
+        Guard.NotNullOrWhiteSpace(graphQLSchemaOrId);
+
+        if (_settings.GraphQLSchemas?.TryGetValue(graphQLSchemaOrId, out _graphQLSchemaDetails) != true)
+        {
+            _graphQLSchemaDetails = new GraphQLSchemaDetails
+            {
+                SchemaAsString = graphQLSchemaOrId,
+                CustomScalars = customScalars
+            };
+        }
 
         return this;
     }
@@ -290,7 +389,8 @@ internal class RespondWithAProvider : IRespondWithAProvider
         string method,
         IDictionary<string, WireMockList<string>>? headers,
         bool useTransformer,
-        TransformerType transformerType)
+        TransformerType transformerType
+    )
     {
         return new Webhook
         {

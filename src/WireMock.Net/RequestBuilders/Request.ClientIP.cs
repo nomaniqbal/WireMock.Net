@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using Stef.Validation;
 using WireMock.Matchers;
@@ -23,17 +25,17 @@ public partial class Request
     }
 
     /// <inheritdoc />
-    public IRequestBuilder WithClientIP(params string[] paths)
+    public IRequestBuilder WithClientIP(params string[] clientIPs)
     {
-        return WithClientIP(MatchOperator.Or, paths);
+        return WithClientIP(MatchOperator.Or, clientIPs);
     }
 
     /// <inheritdoc />
-    public IRequestBuilder WithClientIP(MatchOperator matchOperator, params string[] paths)
+    public IRequestBuilder WithClientIP(MatchOperator matchOperator, params string[] clientIPs)
     {
-        Guard.NotNullOrEmpty(paths);
+        Guard.NotNullOrEmpty(clientIPs);
 
-        _requestMatchers.Add(new RequestMessageClientIPMatcher(MatchBehaviour.AcceptOnMatch, matchOperator, paths));
+        _requestMatchers.Add(new RequestMessageClientIPMatcher(MatchBehaviour.AcceptOnMatch, matchOperator, clientIPs));
         return this;
     }
 

@@ -1,3 +1,6 @@
+// Copyright © WireMock.Net
+
+using FluentAssertions;
 using NFluent;
 using WireMock.Matchers;
 using Xunit;
@@ -14,7 +17,12 @@ public class ContentTypeMatcherTests
     public void ContentTypeMatcher_IsMatchWithIgnoreCaseFalse_Positive(string contentType)
     {
         var matcher = new ContentTypeMatcher("application/json");
-        Check.That(matcher.IsMatch(contentType)).IsEqualTo(1.0d);
+
+        // Act
+        var score = matcher.IsMatch(contentType).Score;
+
+        // Assert
+        score.Should().Be(MatchScores.Perfect);
     }
 
     [Theory]
@@ -26,7 +34,12 @@ public class ContentTypeMatcherTests
     public void ContentTypeMatcher_IsMatchWithIgnoreCaseTrue_Positive(string contentType)
     {
         var matcher = new ContentTypeMatcher("application/json", true);
-        Check.That(matcher.IsMatch(contentType)).IsEqualTo(1.0d);
+
+        // Act
+        var score = matcher.IsMatch(contentType).Score;
+
+        // Assert
+        score.Should().Be(MatchScores.Perfect);
     }
 
     [Fact]

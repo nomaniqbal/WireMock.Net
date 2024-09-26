@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using WireMock.Admin.Mappings;
@@ -54,6 +56,11 @@ public class LogRequestModel
     /// The method.
     /// </summary>
     public string Method { get; set; }
+
+    /// <summary>
+    /// The HTTP Version.
+    /// </summary>
+    public string HttpVersion { get; set; } = null!;
 
     /// <summary>
     /// The Headers.

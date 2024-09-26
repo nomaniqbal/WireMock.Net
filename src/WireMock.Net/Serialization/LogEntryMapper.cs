@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System.Linq;
 using Stef.Validation;
 using WireMock.Admin.Mappings;
@@ -32,6 +34,7 @@ internal class LogEntryMapper
             ProxyUrl = logEntry.RequestMessage.ProxyUrl,
             Query = logEntry.RequestMessage.Query,
             Method = logEntry.RequestMessage.Method,
+            HttpVersion = logEntry.RequestMessage.HttpVersion,
             Headers = logEntry.RequestMessage.Headers,
             Cookies = logEntry.RequestMessage.Cookies
         };

@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -30,8 +32,8 @@ internal class ProxyMappingConverter
     {
         var useDefinedRequestMatchers = proxyAndRecordSettings.UseDefinedRequestMatchers;
         var excludedHeaders = new List<string>(proxyAndRecordSettings.ExcludedHeaders ?? new string[] { }) { "Cookie" };
-        var excludedCookies = proxyAndRecordSettings.ExcludedCookies ?? new string[0];
-        var excludedParams = proxyAndRecordSettings.ExcludedParams ?? new string[0];
+        var excludedCookies = proxyAndRecordSettings.ExcludedCookies ?? EmptyArray<string>.Value;
+        var excludedParams = proxyAndRecordSettings.ExcludedParams ?? EmptyArray<string>.Value;
 
         var request = (Request?)mapping?.RequestMatcher;
         var clientIPMatcher = request?.GetRequestMessageMatcher<RequestMessageClientIPMatcher>();
@@ -41,6 +43,7 @@ internal class ProxyMappingConverter
         var paramMatchers = request?.GetRequestMessageMatchers<RequestMessageParamMatcher>();
         var methodMatcher = request?.GetRequestMessageMatcher<RequestMessageMethodMatcher>();
         var bodyMatcher = request?.GetRequestMessageMatcher<RequestMessageBodyMatcher>();
+        var httpVersionMatcher = request?.GetRequestMessageMatcher<RequestMessageHttpVersionMatcher>();
 
         var newRequest = Request.Create();
 
@@ -68,6 +71,16 @@ internal class ProxyMappingConverter
         else
         {
             newRequest.UsingMethod(requestMessage.Method);
+        }
+
+        // HttpVersion
+        if (useDefinedRequestMatchers && httpVersionMatcher?.HttpVersion is not null)
+        {
+            newRequest.WithHttpVersion(httpVersionMatcher.HttpVersion);
+        }
+        else
+        {
+            newRequest.WithHttpVersion(requestMessage.HttpVersion);
         }
 
         // QueryParams
@@ -137,7 +150,6 @@ internal class ProxyMappingConverter
         }
 
         // Body
-        bool throwExceptionWhenMatcherFails = _settings.ThrowExceptionWhenMatcherFails == true;
         if (useDefinedRequestMatchers && bodyMatcher?.Matchers is not null)
         {
             newRequest.WithBody(bodyMatcher.Matchers);
@@ -147,16 +159,16 @@ internal class ProxyMappingConverter
             switch (requestMessage.BodyData?.DetectedBodyType)
             {
                 case BodyType.Json:
-                    newRequest.WithBody(new JsonMatcher(MatchBehaviour.AcceptOnMatch, requestMessage.BodyData.BodyAsJson!, true, throwExceptionWhenMatcherFails));
+                    newRequest.WithBody(new JsonMatcher(MatchBehaviour.AcceptOnMatch, requestMessage.BodyData.BodyAsJson!, true));
                     break;
 
                 case BodyType.String:
                 case BodyType.FormUrlEncoded:
-                    newRequest.WithBody(new ExactMatcher(MatchBehaviour.AcceptOnMatch, true, throwExceptionWhenMatcherFails, MatchOperator.Or, requestMessage.BodyData.BodyAsString!));
+                    newRequest.WithBody(new ExactMatcher(MatchBehaviour.AcceptOnMatch, true, MatchOperator.Or, requestMessage.BodyData.BodyAsString!));
                     break;
 
                 case BodyType.Bytes:
-                    newRequest.WithBody(new ExactObjectMatcher(MatchBehaviour.AcceptOnMatch, requestMessage.BodyData.BodyAsBytes!, throwExceptionWhenMatcherFails));
+                    newRequest.WithBody(new ExactObjectMatcher(MatchBehaviour.AcceptOnMatch, requestMessage.BodyData.BodyAsBytes!));
                     break;
             }
         }

@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System.IO;
 using System.Net;
 using System.Text;
@@ -42,7 +44,14 @@ public class PactTests
                     })
             );
 
-        server.SavePact(Path.Combine("../../../", "Pact", "files"), "pact-get.json");
+        var folder = Path.Combine("../../../", "Pact", "files");
+        var file = "pact-get.json";
+
+        // Act
+        server.SavePact(folder, file);
+
+        // Assert
+        File.ReadAllBytes(Path.Combine(folder, file)).Length.Should().BeGreaterThan(1);
     }
 
     [Fact]
@@ -201,6 +210,13 @@ public class PactTests
                     })
             );
 
-        server.SavePact(Path.Combine("../../../", "Pact", "files"), "pact-multiple.json");
+        var folder = Path.Combine("../../../", "Pact", "files");
+        var file = "pact-multiple.json";
+
+        // Act
+        server.SavePact(folder, file);
+
+        // Assert
+        File.ReadAllBytes(Path.Combine(folder, file)).Length.Should().BeGreaterThan(1);
     }
 }

@@ -1,7 +1,9 @@
+// Copyright © WireMock.Net
+
 namespace WireMock.Matchers;
 
 /// <summary>
-/// MatchBehaviour
+/// MatchBehaviour (Accept or Reject)
 /// </summary>
 public enum MatchBehaviour
 {

@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Linq;
 using Stef.Validation;
@@ -40,13 +42,8 @@ internal class RequestMessageMethodMatcher : IRequestMatcher
     /// <inheritdoc />
     public double GetMatchingScore(IRequestMessage requestMessage, IRequestMatchResult requestMatchResult)
     {
-        double score = MatchBehaviourHelper.Convert(MatchBehaviour, IsMatch(requestMessage));
-        return requestMatchResult.AddScore(GetType(), score);
-    }
-
-    private double IsMatch(IRequestMessage requestMessage)
-    {
         var scores = Methods.Select(m => string.Equals(m, requestMessage.Method, StringComparison.OrdinalIgnoreCase)).ToArray();
-        return MatchScores.ToScore(scores, MatchOperator);
+        var score = MatchScores.ToScore(scores, MatchOperator);
+        return requestMatchResult.AddScore(GetType(), score, null);
     }
 }

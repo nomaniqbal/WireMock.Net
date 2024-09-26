@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -16,9 +18,11 @@ using WireMock.Http;
 using WireMock.Logging;
 using WireMock.Matchers;
 using WireMock.Matchers.Request;
+using WireMock.Owin;
 using WireMock.RequestBuilders;
 using WireMock.ResponseProviders;
 using WireMock.Serialization;
+using WireMock.Settings;
 using WireMock.Types;
 using WireMock.Util;
 
@@ -30,89 +34,116 @@ namespace WireMock.Server;
 public partial class WireMockServer
 {
     private const int EnhancedFileSystemWatcherTimeoutMs = 1000;
-    private const string AdminFiles = "/__admin/files";
-    private const string AdminMappings = "/__admin/mappings";
-    private const string AdminMappingsCode = "/__admin/mappings/code";
-    private const string AdminMappingsWireMockOrg = "/__admin/mappings/wiremock.org";
-    private const string AdminRequests = "/__admin/requests";
-    private const string AdminSettings = "/__admin/settings";
-    private const string AdminScenarios = "/__admin/scenarios";
+    private const string DefaultAdminPathPrefix = "/__admin";
     private const string QueryParamReloadStaticMappings = "reloadStaticMappings";
-
     private static readonly Guid ProxyMappingGuid = new("e59914fd-782e-428e-91c1-4810ffb86567");
     private static readonly RegexMatcher AdminRequestContentTypeJson = new ContentTypeMatcher(WireMockConstants.ContentTypeJson, true);
-    private static readonly RegexMatcher AdminMappingsGuidPathMatcher = new(@"^\/__admin\/mappings\/([0-9A-Fa-f]{8}[-][0-9A-Fa-f]{4}[-][0-9A-Fa-f]{4}[-][0-9A-Fa-f]{4}[-][0-9A-Fa-f]{12})$");
-    private static readonly RegexMatcher AdminMappingsCodeGuidPathMatcher = new(@"^\/__admin\/mappings\/code\/([0-9A-Fa-f]{8}[-][0-9A-Fa-f]{4}[-][0-9A-Fa-f]{4}[-][0-9A-Fa-f]{4}[-][0-9A-Fa-f]{12})$");
-    private static readonly RegexMatcher AdminRequestsGuidPathMatcher = new(@"^\/__admin\/requests\/([0-9A-Fa-f]{8}[-][0-9A-Fa-f]{4}[-][0-9A-Fa-f]{4}[-][0-9A-Fa-f]{4}[-][0-9A-Fa-f]{12})$");
-    private static readonly RegexMatcher AdminScenariosNameMatcher = new(@"^\/__admin\/scenarios\/.+$");
-    private static readonly RegexMatcher AdminScenariosNameWithResetMatcher = new(@"^\/__admin\/scenarios\/.+\/reset$");
-
     private EnhancedFileSystemWatcher? _enhancedFileSystemWatcher;
+    private AdminPaths? _adminPaths;
+
+    private sealed class AdminPaths
+    {
+        private readonly string _prefix;
+        private readonly string _prefixEscaped;
+
+        public AdminPaths(WireMockServerSettings settings)
+        {
+            _prefix = settings.AdminPath ?? DefaultAdminPathPrefix;
+            _prefixEscaped = _prefix.Replace("/", "\\/");
+        }
+
+        public string Files => $"{_prefix}/files";
+        public string Health => $"{_prefix}/health";
+        public string Mappings => $"{_prefix}/mappings";
+        public string MappingsCode => $"{_prefix}/mappings/code";
+        public string MappingsWireMockOrg => $"{_prefix}mappings/wiremock.org";
+        public string Requests => $"{_prefix}/requests";
+        public string Settings => $"{_prefix}/settings";
+        public string Scenarios => $"{_prefix}/scenarios";
+        public string OpenApi => $"{_prefix}/openapi";
+
+        public RegexMatcher MappingsGuidPathMatcher => new($"^{_prefixEscaped}\\/mappings\\/([0-9A-Fa-f]{{8}}[-][0-9A-Fa-f]{{4}}[-][0-9A-Fa-f]{{4}}[-][0-9A-Fa-f]{{4}}[-][0-9A-Fa-f]{{12}})$");
+        public RegexMatcher MappingsCodeGuidPathMatcher => new($"^{_prefixEscaped}\\/mappings\\/code\\/([0-9A-Fa-f]{{8}}[-][0-9A-Fa-f]{{4}}[-][0-9A-Fa-f]{{4}}[-][0-9A-Fa-f]{{4}}[-][0-9A-Fa-f]{{12}})$");
+        public RegexMatcher RequestsGuidPathMatcher => new($"^{_prefixEscaped}\\/requests\\/([0-9A-Fa-f]{{8}}[-][0-9A-Fa-f]{{4}}[-][0-9A-Fa-f]{{4}}[-][0-9A-Fa-f]{{4}}[-][0-9A-Fa-f]{{12}})$");
+        public RegexMatcher ScenariosNameMatcher => new($"^{_prefixEscaped}\\/scenarios\\/.+$");
+        public RegexMatcher ScenariosNameWithResetMatcher => new($"^{_prefixEscaped}\\/scenarios\\/.+\\/reset$");
+        public RegexMatcher FilesFilenamePathMatcher => new($"^{_prefixEscaped}\\/files\\/.+$");
+    }
 
     #region InitAdmin
     private void InitAdmin()
     {
+        _adminPaths = new AdminPaths(_settings);
+
+        // __admin/health
+        Given(Request.Create().WithPath(_adminPaths.Health).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(HealthGet));
+
         // __admin/settings
-        Given(Request.Create().WithPath(AdminSettings).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(SettingsGet));
-        Given(Request.Create().WithPath(AdminSettings).UsingMethod("PUT", "POST").WithHeader(HttpKnownHeaderNames.ContentType, AdminRequestContentTypeJson)).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(SettingsUpdate));
+        Given(Request.Create().WithPath(_adminPaths.Settings).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(SettingsGet));
+        Given(Request.Create().WithPath(_adminPaths.Settings).UsingMethod("PUT", "POST").WithHeader(HttpKnownHeaderNames.ContentType, AdminRequestContentTypeJson)).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(SettingsUpdate));
 
         // __admin/mappings
-        Given(Request.Create().WithPath(AdminMappings).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsGet));
-        Given(Request.Create().WithPath(AdminMappings).UsingPost().WithHeader(HttpKnownHeaderNames.ContentType, AdminRequestContentTypeJson)).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsPost));
-        Given(Request.Create().WithPath(AdminMappings).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsDelete));
+        Given(Request.Create().WithPath(_adminPaths.Mappings).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsGet));
+        Given(Request.Create().WithPath(_adminPaths.Mappings).UsingPost().WithHeader(HttpKnownHeaderNames.ContentType, AdminRequestContentTypeJson)).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsPost));
+        Given(Request.Create().WithPath(_adminPaths.Mappings).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsDelete));
 
         // __admin/mappings/code
-        Given(Request.Create().WithPath(AdminMappingsCode).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsCodeGet));
+        Given(Request.Create().WithPath(_adminPaths.MappingsCode).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsCodeGet));
 
         // __admin/mappings/wiremock.org
-        Given(Request.Create().WithPath(AdminMappingsWireMockOrg).UsingPost().WithHeader(HttpKnownHeaderNames.ContentType, AdminRequestContentTypeJson)).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsPostWireMockOrg));
+        Given(Request.Create().WithPath(_adminPaths.MappingsWireMockOrg).UsingPost().WithHeader(HttpKnownHeaderNames.ContentType, AdminRequestContentTypeJson)).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsPostWireMockOrg));
 
         // __admin/mappings/reset
-        Given(Request.Create().WithPath(AdminMappings + "/reset").UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsReset));
+        Given(Request.Create().WithPath(_adminPaths.Mappings + "/reset").UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsReset));
 
         // __admin/mappings/{guid}
-        Given(Request.Create().WithPath(AdminMappingsGuidPathMatcher).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingGet));
-        Given(Request.Create().WithPath(AdminMappingsGuidPathMatcher).UsingPut().WithHeader(HttpKnownHeaderNames.ContentType, AdminRequestContentTypeJson)).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingPut));
-        Given(Request.Create().WithPath(AdminMappingsGuidPathMatcher).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingDelete));
+        Given(Request.Create().WithPath(_adminPaths.MappingsGuidPathMatcher).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingGet));
+        Given(Request.Create().WithPath(_adminPaths.MappingsGuidPathMatcher).UsingPut().WithHeader(HttpKnownHeaderNames.ContentType, AdminRequestContentTypeJson)).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingPut));
+        Given(Request.Create().WithPath(_adminPaths.MappingsGuidPathMatcher).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingDelete));
 
         // __admin/mappings/code/{guid}
-        Given(Request.Create().WithPath(AdminMappingsCodeGuidPathMatcher).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingCodeGet));
+        Given(Request.Create().WithPath(_adminPaths.MappingsCodeGuidPathMatcher).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingCodeGet));
 
         // __admin/mappings/save
-        Given(Request.Create().WithPath($"{AdminMappings}/save").UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsSave));
+        Given(Request.Create().WithPath($"{_adminPaths.Mappings}/save").UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(MappingsSave));
 
         // __admin/mappings/swagger
-        Given(Request.Create().WithPath($"{AdminMappings}/swagger").UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(SwaggerGet));
+        Given(Request.Create().WithPath($"{_adminPaths.Mappings}/swagger").UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(SwaggerGet));
 
         // __admin/requests
-        Given(Request.Create().WithPath(AdminRequests).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(RequestsGet));
-        Given(Request.Create().WithPath(AdminRequests).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(RequestsDelete));
+        Given(Request.Create().WithPath(_adminPaths.Requests).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(RequestsGet));
+        Given(Request.Create().WithPath(_adminPaths.Requests).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(RequestsDelete));
 
         // __admin/requests/reset
-        Given(Request.Create().WithPath(AdminRequests + "/reset").UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(RequestsDelete));
+        Given(Request.Create().WithPath(_adminPaths.Requests + "/reset").UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(RequestsDelete));
 
         // __admin/request/{guid}
-        Given(Request.Create().WithPath(AdminRequestsGuidPathMatcher).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(RequestGet));
-        Given(Request.Create().WithPath(AdminRequestsGuidPathMatcher).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(RequestDelete));
+        Given(Request.Create().WithPath(_adminPaths.RequestsGuidPathMatcher).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(RequestGet));
+        Given(Request.Create().WithPath(_adminPaths.RequestsGuidPathMatcher).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(RequestDelete));
 
         // __admin/requests/find
-        Given(Request.Create().WithPath(AdminRequests + "/find").UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(RequestsFind));
+        Given(Request.Create().WithPath(_adminPaths.Requests + "/find").UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(RequestsFind));
+        Given(Request.Create().WithPath(_adminPaths.Requests + "/find").UsingGet().WithParam("mappingGuid", new NotNullOrEmptyMatcher())).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(RequestsFindByMappingGuid));
 
         // __admin/scenarios
-        Given(Request.Create().WithPath(AdminScenarios).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(ScenariosGet));
-        Given(Request.Create().WithPath(AdminScenarios).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(ScenariosReset));
-        Given(Request.Create().WithPath(AdminScenariosNameMatcher).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(ScenarioReset));
+        Given(Request.Create().WithPath(_adminPaths.Scenarios).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(ScenariosGet));
+        Given(Request.Create().WithPath(_adminPaths.Scenarios).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(ScenariosReset));
+        Given(Request.Create().WithPath(_adminPaths.ScenariosNameMatcher).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(ScenarioReset));
 
         // __admin/scenarios/reset
-        Given(Request.Create().WithPath(AdminScenarios + "/reset").UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(ScenariosReset));
-        Given(Request.Create().WithPath(AdminScenariosNameWithResetMatcher).UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(ScenarioReset));
+        Given(Request.Create().WithPath(_adminPaths.Scenarios + "/reset").UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(ScenariosReset));
+        Given(Request.Create().WithPath(_adminPaths.ScenariosNameWithResetMatcher).UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(ScenarioReset));
 
         // __admin/files/{filename}
-        Given(Request.Create().WithPath(_adminFilesFilenamePathMatcher).UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(FilePost));
-        Given(Request.Create().WithPath(_adminFilesFilenamePathMatcher).UsingPut()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(FilePut));
-        Given(Request.Create().WithPath(_adminFilesFilenamePathMatcher).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(FileGet));
-        Given(Request.Create().WithPath(_adminFilesFilenamePathMatcher).UsingHead()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(FileHead));
-        Given(Request.Create().WithPath(_adminFilesFilenamePathMatcher).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(FileDelete));
+        Given(Request.Create().WithPath(_adminPaths.FilesFilenamePathMatcher).UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(FilePost));
+        Given(Request.Create().WithPath(_adminPaths.FilesFilenamePathMatcher).UsingPut()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(FilePut));
+        Given(Request.Create().WithPath(_adminPaths.FilesFilenamePathMatcher).UsingGet()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(FileGet));
+        Given(Request.Create().WithPath(_adminPaths.FilesFilenamePathMatcher).UsingHead()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(FileHead));
+        Given(Request.Create().WithPath(_adminPaths.FilesFilenamePathMatcher).UsingDelete()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(FileDelete));
+
+        // __admin/openapi
+        Given(Request.Create().WithPath($"{_adminPaths.OpenApi}/convert").UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(OpenApiConvertToMappings));
+        Given(Request.Create().WithPath($"{_adminPaths.OpenApi}/save").UsingPost()).AtPriority(WireMockConstants.AdminPriority).RespondWith(new DynamicResponseProvider(OpenApiSaveToMappings));
     }
     #endregion
 
@@ -195,7 +226,7 @@ public partial class WireMockServer
         if (FileHelper.TryReadMappingFileWithRetryAndDelay(_settings.FileSystemHandler, path, out var value))
         {
             var mappingModels = DeserializeJsonToArray<MappingModel>(value);
-            if (mappingModels.Length == 1 && Guid.TryParse(filenameWithoutExtension, out Guid guidFromFilename))
+            if (mappingModels.Length == 1 && Guid.TryParse(filenameWithoutExtension, out var guidFromFilename))
             {
                 ConvertMappingAndRegisterAsRespondProvider(mappingModels[0], guidFromFilename, path);
             }
@@ -208,6 +239,22 @@ public partial class WireMockServer
         }
 
         return false;
+    }
+    #endregion
+
+    #region Health
+    private static IResponseMessage HealthGet(IRequestMessage requestMessage)
+    {
+        return new ResponseMessage
+        {
+            BodyData = new BodyData
+            {
+                DetectedBodyType = BodyType.String,
+                BodyAsString = "Healthy"
+            },
+            StatusCode = (int)HttpStatusCode.OK,
+            Headers = new Dictionary<string, WireMockList<string>> { { HttpKnownHeaderNames.ContentType, new WireMockList<string>(WireMockConstants.ContentTypeTextPlain) } }
+        };
     }
     #endregion
 
@@ -224,14 +271,15 @@ public partial class WireMockServer
             DisableRequestBodyDecompressing = _settings.DisableRequestBodyDecompressing,
             DoNotSaveDynamicResponseInLogEntry = _settings.DoNotSaveDynamicResponseInLogEntry,
             GlobalProcessingDelay = (int?)_options.RequestProcessingDelay?.TotalMilliseconds,
+            // GraphQLSchemas TODO
             HandleRequestsSynchronously = _settings.HandleRequestsSynchronously,
             HostingScheme = _settings.HostingScheme,
             MaxRequestLogCount = _settings.MaxRequestLogCount,
+            ProtoDefinitions = _settings.ProtoDefinitions,
             QueryParameterMultipleValueSupport = _settings.QueryParameterMultipleValueSupport,
             ReadStaticMappings = _settings.ReadStaticMappings,
             RequestLogExpirationDuration = _settings.RequestLogExpirationDuration,
             SaveUnmatchedRequests = _settings.SaveUnmatchedRequests,
-            ThrowExceptionWhenMatcherFails = _settings.ThrowExceptionWhenMatcherFails,
             UseRegexExtended = _settings.UseRegexExtended,
             WatchStaticMappings = _settings.WatchStaticMappings,
             WatchStaticMappingsInSubdirectories = _settings.WatchStaticMappingsInSubdirectories,
@@ -262,42 +310,40 @@ public partial class WireMockServer
         _settings.DoNotSaveDynamicResponseInLogEntry = settings.DoNotSaveDynamicResponseInLogEntry;
         _settings.HandleRequestsSynchronously = settings.HandleRequestsSynchronously;
         _settings.MaxRequestLogCount = settings.MaxRequestLogCount;
+        _settings.ProtoDefinitions = settings.ProtoDefinitions;
         _settings.ProxyAndRecordSettings = TinyMapperUtils.Instance.Map(settings.ProxyAndRecordSettings);
         _settings.QueryParameterMultipleValueSupport = settings.QueryParameterMultipleValueSupport;
         _settings.ReadStaticMappings = settings.ReadStaticMappings;
         _settings.RequestLogExpirationDuration = settings.RequestLogExpirationDuration;
         _settings.SaveUnmatchedRequests = settings.SaveUnmatchedRequests;
-        _settings.ThrowExceptionWhenMatcherFails = settings.ThrowExceptionWhenMatcherFails;
         _settings.UseRegexExtended = settings.UseRegexExtended;
         _settings.WatchStaticMappings = settings.WatchStaticMappings;
         _settings.WatchStaticMappingsInSubdirectories = settings.WatchStaticMappingsInSubdirectories;
 
         InitSettings(_settings);
 
-        // _options
-        if (settings.GlobalProcessingDelay != null)
-        {
-            _options.RequestProcessingDelay = TimeSpan.FromMilliseconds(settings.GlobalProcessingDelay.Value);
-        }
-        _options.AllowBodyForAllHttpMethods = settings.AllowBodyForAllHttpMethods;
-        _options.AllowPartialMapping = settings.AllowPartialMapping;
-        _options.HandleRequestsSynchronously = settings.HandleRequestsSynchronously;
-        _options.MaxRequestLogCount = settings.MaxRequestLogCount;
-        _options.RequestLogExpirationDuration = settings.RequestLogExpirationDuration;
-
-        // _settings & _options
 #if USE_ASPNETCORE
         if (Enum.TryParse<CorsPolicyOptions>(settings.CorsPolicyOptions, true, out var corsPolicyOptions))
         {
             _settings.CorsPolicyOptions = corsPolicyOptions;
-            _options.CorsPolicyOptions = corsPolicyOptions;
         }
-
-        _options.ClientCertificateMode = _settings.ClientCertificateMode;
-        _options.AcceptAnyClientCertificate = _settings.AcceptAnyClientCertificate;
 #endif
 
-        return ResponseMessageBuilder.Create("Settings updated");
+        WireMockMiddlewareOptionsHelper.InitFromSettings(_settings, _options, o =>
+        {
+            if (settings.GlobalProcessingDelay != null)
+            {
+                o.RequestProcessingDelay = TimeSpan.FromMilliseconds(settings.GlobalProcessingDelay.Value);
+            }
+
+#if USE_ASPNETCORE
+            o.CorsPolicyOptions = corsPolicyOptions;
+            o.ClientCertificateMode = _settings.ClientCertificateMode;
+            o.AcceptAnyClientCertificate = _settings.AcceptAnyClientCertificate;
+#endif
+        });
+
+        return ResponseMessageBuilder.Create(200, "Settings updated");
     }
     #endregion Settings
 
@@ -308,7 +354,7 @@ public partial class WireMockServer
         if (mapping == null)
         {
             _settings.Logger.Warn("HttpStatusCode set to 404 : Mapping not found");
-            return ResponseMessageBuilder.Create("Mapping not found", HttpStatusCode.NotFound);
+            return ResponseMessageBuilder.Create(HttpStatusCode.NotFound, "Mapping not found");
         }
 
         var model = _mappingConverter.ToMappingModel(mapping);
@@ -324,27 +370,25 @@ public partial class WireMockServer
             if (code is null)
             {
                 _settings.Logger.Warn("HttpStatusCode set to 404 : Mapping not found");
-                return ResponseMessageBuilder.Create("Mapping not found", HttpStatusCode.NotFound);
+                return ResponseMessageBuilder.Create(HttpStatusCode.NotFound, "Mapping not found");
             }
 
             return ToResponseMessage(code);
         }
 
         _settings.Logger.Warn("HttpStatusCode set to 400");
-        return ResponseMessageBuilder.Create("GUID is missing", HttpStatusCode.BadRequest);
+        return ResponseMessageBuilder.Create(HttpStatusCode.BadRequest, "GUID is missing");
     }
 
     private static MappingConverterType GetMappingConverterType(IRequestMessage requestMessage)
     {
-        var mappingConverterType = MappingConverterType.Server;
-
         if (requestMessage.QueryIgnoreCase?.TryGetValue(nameof(MappingConverterType), out var values) == true &&
             Enum.TryParse(values.FirstOrDefault(), true, out MappingConverterType parsed))
         {
-            mappingConverterType = parsed;
+            return parsed;
         }
 
-        return mappingConverterType;
+        return MappingConverterType.Server;
     }
 
     private IMapping? FindMappingByGuid(IRequestMessage requestMessage)
@@ -359,22 +403,22 @@ public partial class WireMockServer
             var mappingModel = DeserializeObject<MappingModel>(requestMessage);
             var guidFromPut = ConvertMappingAndRegisterAsRespondProvider(mappingModel, guid);
 
-            return ResponseMessageBuilder.Create("Mapping added or updated", HttpStatusCode.OK, guidFromPut);
+            return ResponseMessageBuilder.Create(HttpStatusCode.OK, "Mapping added or updated", guidFromPut);
         }
 
         _settings.Logger.Warn("HttpStatusCode set to 404 : Mapping not found");
-        return ResponseMessageBuilder.Create("Mapping not found", HttpStatusCode.NotFound);
+        return ResponseMessageBuilder.Create(HttpStatusCode.NotFound, "Mapping not found");
     }
 
     private IResponseMessage MappingDelete(IRequestMessage requestMessage)
     {
         if (TryParseGuidFromRequestMessage(requestMessage, out var guid) && DeleteMapping(guid))
         {
-            return ResponseMessageBuilder.Create("Mapping removed", HttpStatusCode.OK, guid);
+            return ResponseMessageBuilder.Create(HttpStatusCode.OK, "Mapping removed", guid);
         }
 
         _settings.Logger.Warn("HttpStatusCode set to 404 : Mapping not found");
-        return ResponseMessageBuilder.Create("Mapping not found", HttpStatusCode.NotFound);
+        return ResponseMessageBuilder.Create(HttpStatusCode.NotFound, "Mapping not found");
     }
 
     private static bool TryParseGuidFromRequestMessage(IRequestMessage requestMessage, out Guid guid)
@@ -403,7 +447,7 @@ public partial class WireMockServer
     {
         SaveStaticMappings();
 
-        return ResponseMessageBuilder.Create("Mappings saved to disk");
+        return ResponseMessageBuilder.Create(200, "Mappings saved to disk");
     }
 
     private MappingModel[] ToMappingModels()
@@ -432,23 +476,23 @@ public partial class WireMockServer
             var mappingModels = DeserializeRequestMessageToArray<MappingModel>(requestMessage);
             if (mappingModels.Length == 1)
             {
-                Guid? guid = ConvertMappingAndRegisterAsRespondProvider(mappingModels[0]);
-                return ResponseMessageBuilder.Create("Mapping added", 201, guid);
+                var guid = ConvertMappingAndRegisterAsRespondProvider(mappingModels[0]);
+                return ResponseMessageBuilder.Create(201, "Mapping added", guid);
             }
 
             ConvertMappingsAndRegisterAsRespondProvider(mappingModels);
 
-            return ResponseMessageBuilder.Create("Mappings added", 201);
+            return ResponseMessageBuilder.Create(201, "Mappings added");
         }
         catch (ArgumentException a)
         {
             _settings.Logger.Error("HttpStatusCode set to 400 {0}", a);
-            return ResponseMessageBuilder.Create(a.Message, 400);
+            return ResponseMessageBuilder.Create(400, a.Message);
         }
         catch (Exception e)
         {
             _settings.Logger.Error("HttpStatusCode set to 500 {0}", e);
-            return ResponseMessageBuilder.Create(e.ToString(), 500);
+            return ResponseMessageBuilder.Create(500, e.ToString());
         }
     }
 
@@ -459,18 +503,18 @@ public partial class WireMockServer
             var deletedGuids = MappingsDeleteMappingFromBody(requestMessage);
             if (deletedGuids != null)
             {
-                return ResponseMessageBuilder.Create($"Mappings deleted. Affected GUIDs: [{string.Join(", ", deletedGuids.ToArray())}]");
+                return ResponseMessageBuilder.Create(200, $"Mappings deleted. Affected GUIDs: [{string.Join(", ", deletedGuids.ToArray())}]");
             }
 
             // return bad request
-            return ResponseMessageBuilder.Create("Poorly formed mapping JSON.", 400);
+            return ResponseMessageBuilder.Create(400, "Poorly formed mapping JSON.");
         }
 
         ResetMappings();
 
         ResetScenarios();
 
-        return ResponseMessageBuilder.Create("Mappings deleted");
+        return ResponseMessageBuilder.Create(200, "Mappings deleted");
     }
 
     private IEnumerable<Guid>? MappingsDeleteMappingFromBody(IRequestMessage requestMessage)
@@ -522,7 +566,7 @@ public partial class WireMockServer
             message = $"{message} and static mappings reloaded";
         }
 
-        return ResponseMessageBuilder.Create(message);
+        return ResponseMessageBuilder.Create(200, message);
     }
     #endregion Mappings
 
@@ -531,7 +575,7 @@ public partial class WireMockServer
     {
         if (TryParseGuidFromRequestMessage(requestMessage, out var guid))
         {
-            var entry = LogEntries.FirstOrDefault(r => !r.RequestMessage.Path.StartsWith("/__admin/") && r.Guid == guid);
+            var entry = LogEntries.SingleOrDefault(r => !r.RequestMessage.Path.StartsWith("/__admin/") && r.Guid == guid);
             if (entry is { })
             {
                 var model = new LogEntryMapper(_options).Map(entry);
@@ -540,18 +584,18 @@ public partial class WireMockServer
         }
 
         _settings.Logger.Warn("HttpStatusCode set to 404 : Request not found");
-        return ResponseMessageBuilder.Create("Request not found", HttpStatusCode.NotFound);
+        return ResponseMessageBuilder.Create(HttpStatusCode.NotFound, "Request not found");
     }
 
     private IResponseMessage RequestDelete(IRequestMessage requestMessage)
     {
         if (TryParseGuidFromRequestMessage(requestMessage, out var guid) && DeleteLogEntry(guid))
         {
-            return ResponseMessageBuilder.Create("Request removed");
+            return ResponseMessageBuilder.Create(200, "Request removed");
         }
 
         _settings.Logger.Warn("HttpStatusCode set to 404 : Request not found");
-        return ResponseMessageBuilder.Create("Request not found", HttpStatusCode.NotFound);
+        return ResponseMessageBuilder.Create(HttpStatusCode.NotFound, "Request not found");
     }
     #endregion Request/{guid}
 
@@ -570,7 +614,7 @@ public partial class WireMockServer
     {
         ResetLogEntries();
 
-        return ResponseMessageBuilder.Create("Requests deleted");
+        return ResponseMessageBuilder.Create(200, "Requests deleted");
     }
     #endregion Requests
 
@@ -579,7 +623,7 @@ public partial class WireMockServer
     {
         var requestModel = DeserializeObject<RequestModel>(requestMessage);
 
-        var request = (Request)InitRequestBuilder(requestModel, false)!;
+        var request = (Request)InitRequestBuilder(requestModel);
 
         var dict = new Dictionary<ILogEntry, RequestMatchResult>();
         foreach (var logEntry in LogEntries.Where(le => !le.RequestMessage.Path.StartsWith("/__admin/")))
@@ -595,6 +639,22 @@ public partial class WireMockServer
         var result = dict.OrderBy(x => x.Value.AverageTotalScore).Select(x => x.Key).Select(logEntryMapper.Map);
 
         return ToJson(result);
+    }
+
+    private IResponseMessage RequestsFindByMappingGuid(IRequestMessage requestMessage)
+    {
+        if (requestMessage.Query != null &&
+            requestMessage.Query.TryGetValue("mappingGuid", out var value) &&
+            Guid.TryParse(value.ToString(), out var mappingGuid)
+        )
+        {
+            var logEntries = LogEntries.Where(le => !le.RequestMessage.Path.StartsWith("/__admin/") && le.MappingGuid == mappingGuid);
+            var logEntryMapper = new LogEntryMapper(_options);
+            var result = logEntries.Select(logEntryMapper.Map);
+            return ToJson(result);
+        }
+
+        return ResponseMessageBuilder.Create(HttpStatusCode.BadRequest);
     }
     #endregion Requests/find
 
@@ -617,18 +677,18 @@ public partial class WireMockServer
     {
         ResetScenarios();
 
-        return ResponseMessageBuilder.Create("Scenarios reset");
+        return ResponseMessageBuilder.Create(200, "Scenarios reset");
     }
 
     private IResponseMessage ScenarioReset(IRequestMessage requestMessage)
     {
         var name = string.Equals(HttpRequestMethod.DELETE, requestMessage.Method, StringComparison.OrdinalIgnoreCase) ?
-            requestMessage.Path.Substring(AdminScenarios.Length + 1) :
+            requestMessage.Path.Substring(_adminPaths!.Scenarios.Length + 1) :
             requestMessage.Path.Split('/').Reverse().Skip(1).First();
 
         return ResetScenario(name) ?
-            ResponseMessageBuilder.Create("Scenario reset") :
-            ResponseMessageBuilder.Create($"No scenario found by name '{name}'.", HttpStatusCode.NotFound);
+            ResponseMessageBuilder.Create(200, "Scenario reset") :
+            ResponseMessageBuilder.Create(HttpStatusCode.NotFound, $"No scenario found by name '{name}'.");
     }
     #endregion
 
@@ -722,7 +782,7 @@ public partial class WireMockServer
         _settings.Logger.Info("MappingFile deleted : '{0}'", args.FullPath);
         string filenameWithoutExtension = Path.GetFileNameWithoutExtension(args.FullPath);
 
-        if (Guid.TryParse(filenameWithoutExtension, out Guid guidFromFilename))
+        if (Guid.TryParse(filenameWithoutExtension, out var guidFromFilename))
         {
             DeleteMapping(guidFromFilename);
         }
@@ -737,7 +797,7 @@ public partial class WireMockServer
         return encodingModel != null ? Encoding.GetEncoding(encodingModel.CodePage) : null;
     }
 
-    private static ResponseMessage ToJson<T>(T result, bool keepNullValues = false)
+    private static ResponseMessage ToJson<T>(T result, bool keepNullValues = false, object? statusCode = null)
     {
         return new ResponseMessage
         {
@@ -746,7 +806,7 @@ public partial class WireMockServer
                 DetectedBodyType = BodyType.String,
                 BodyAsString = JsonConvert.SerializeObject(result, keepNullValues ? JsonSerializationConstants.JsonSerializerSettingsIncludeNullValues : JsonSerializationConstants.JsonSerializerSettingsDefault)
             },
-            StatusCode = (int)HttpStatusCode.OK,
+            StatusCode = statusCode ?? (int)HttpStatusCode.OK,
             Headers = new Dictionary<string, WireMockList<string>> { { HttpKnownHeaderNames.ContentType, new WireMockList<string>(WireMockConstants.ContentTypeJson) } }
         };
     }

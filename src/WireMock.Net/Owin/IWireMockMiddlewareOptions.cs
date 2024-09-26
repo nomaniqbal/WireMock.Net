@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Concurrent;
 using WireMock.Handlers;
@@ -77,4 +79,6 @@ internal interface IWireMockMiddlewareOptions
     bool? DoNotSaveDynamicResponseInLogEntry { get; set; }
 
     QueryParameterMultipleValueSupport? QueryParameterMultipleValueSupport { get; set; }
+
+    public bool ProxyAll { get; set; }
 }

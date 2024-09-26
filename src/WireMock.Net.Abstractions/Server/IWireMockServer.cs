@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
@@ -16,6 +18,11 @@ public interface IWireMockServer : IDisposable
     /// Gets a value indicating whether this server is started.
     /// </summary>
     bool IsStarted { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether this server is started with the admin interface enabled.
+    /// </summary>
+    bool IsStartedWithAdminInterface { get; }
 
     /// <summary>
     /// Gets the request logs.
@@ -129,7 +136,7 @@ public interface IWireMockServer : IDisposable
     void RemoveAuthentication();
 
     /// <summary>
-    /// Resets LogEntries and Mappings.
+    /// Resets LogEntries, Mappings and Scenarios.
     /// </summary>
     void Reset();
 

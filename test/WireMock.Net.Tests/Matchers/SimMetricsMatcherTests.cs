@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using NFluent;
 using WireMock.Matchers;
 using Xunit;
@@ -39,7 +41,7 @@ public class SimMetricsMatcherTests
         var matcher = new SimMetricsMatcher("The cat walks in the street.");
 
         // Act
-        double result = matcher.IsMatch("The car drives in the street.");
+        double result = matcher.IsMatch("The car drives in the street.").Score;
 
         // Assert
         Check.That(result).IsStrictlyLessThan(1.0).And.IsStrictlyGreaterThan(0.5);
@@ -52,7 +54,7 @@ public class SimMetricsMatcherTests
         var matcher = new SimMetricsMatcher("The cat walks in the street.");
 
         // Act
-        double result = matcher.IsMatch("Hello");
+        double result = matcher.IsMatch("Hello").Score;
 
         // Assert
         Check.That(result).IsStrictlyLessThan(0.1).And.IsStrictlyGreaterThan(0.05);
@@ -65,7 +67,7 @@ public class SimMetricsMatcherTests
         var matcher = new SimMetricsMatcher("test");
 
         // Act
-        double result = matcher.IsMatch("test");
+        double result = matcher.IsMatch("test").Score;
 
         // Assert
         Check.That(result).IsEqualTo(1.0);
@@ -78,7 +80,7 @@ public class SimMetricsMatcherTests
         var matcher = new SimMetricsMatcher(MatchBehaviour.RejectOnMatch, "test");
 
         // Act
-        double result = matcher.IsMatch("test");
+        double result = matcher.IsMatch("test").Score;
 
         // Assert
         Check.That(result).IsEqualTo(0.0);

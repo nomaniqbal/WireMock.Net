@@ -1,4 +1,8 @@
+// Copyright © WireMock.Net
+
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using JetBrains.Annotations;
 using WireMock.Handlers;
 using WireMock.Types;
 
@@ -63,11 +67,6 @@ public class SettingsModel
     public bool? HandleRequestsSynchronously { get; set; }
 
     /// <summary>
-    /// Throw an exception when the Matcher fails because of invalid input. (default set to <c>false</c>).
-    /// </summary>
-    public bool? ThrowExceptionWhenMatcherFails { get; set; }
-
-    /// <summary>
     /// Use the RegexExtended instead of the default <see cref="Regex"/>.  (default set to <c>true</c>).
     /// </summary>
     public bool? UseRegexExtended { get; set; }
@@ -118,6 +117,11 @@ public class SettingsModel
     /// Default value = "All".
     /// </summary>
     public QueryParameterMultipleValueSupport? QueryParameterMultipleValueSupport { get; set; }
+
+    /// <summary>
+    /// A list of Grpc ProtoDefinitions which can be used.
+    /// </summary>
+    public Dictionary<string, string>? ProtoDefinitions { get; set; }
 
 #if NETSTANDARD1_3_OR_GREATER || NET461
     /// <summary>

@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 namespace WireMock.Matchers;
 
 /// <summary>
@@ -16,7 +18,8 @@ public interface IMatcher
     MatchBehaviour MatchBehaviour { get; }
 
     /// <summary>
-    /// Should this matcher throw an exception?
+    /// Get the C# code arguments.
     /// </summary>
-    bool ThrowException { get; }
+    /// <returns></returns>
+    string GetCSharpCodeArguments();
 }

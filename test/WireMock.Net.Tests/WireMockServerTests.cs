@@ -1,17 +1,24 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Newtonsoft.Json;
 using NFluent;
 using WireMock.Admin.Mappings;
+using WireMock.Http;
 using WireMock.Matchers;
+using WireMock.Net.Tests.Facts;
 using WireMock.Net.Tests.Serialization;
 using WireMock.Net.Xunit;
 using WireMock.RequestBuilders;
@@ -32,6 +39,32 @@ public partial class WireMockServerTests
     public WireMockServerTests(ITestOutputHelper testOutputHelper)
     {
         _testOutputHelper = testOutputHelper;
+    }
+
+    [Fact]
+    public void WireMockServer_Start()
+    {
+        // Act
+        var server = WireMockServer.Start();
+
+        // Assert
+        server.IsStarted.Should().BeTrue();
+        server.IsStartedWithAdminInterface.Should().BeFalse();
+
+        server.Stop();
+    }
+
+    [Fact]
+    public void WireMockServer_StartWithAdminInterface()
+    {
+        // Act
+        var server = WireMockServer.StartWithAdminInterface();
+
+        // Assert
+        server.IsStarted.Should().BeTrue();
+        server.IsStartedWithAdminInterface.Should().BeTrue();
+
+        server.Stop();
     }
 
     [Fact]
@@ -74,6 +107,158 @@ public partial class WireMockServerTests
         server.Stop();
     }
 
+#if NET461_OR_GREATER || NET6_0_OR_GREATER
+    [Fact]
+    public async Task WireMockServer_Should_Support_Https()
+    {
+        // Arrange
+        const string body = "example";
+        var path = $"/foo_{Guid.NewGuid()}";
+        var server = WireMockServer.Start(settings =>
+        {
+            settings.UseSSL = true;
+        });
+
+        server
+            .Given(Request.Create()
+                .WithPath(path)
+                .UsingGet()
+            )
+            .RespondWith(Response.Create()
+                .WithBody(body)
+            );
+
+        // Configure the HttpClient to trust self-signed certificates
+        var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+        };
+        using var client = new HttpClient(handler);
+
+        // Act
+        var result = await client.GetStringAsync($"{server.Url}{path}").ConfigureAwait(false);
+
+        // Assert
+        result.Should().Be(body);
+
+        server.Stop();
+    }
+#endif
+
+#if NET6_0_OR_GREATER
+    [Fact]
+    public async Task WireMockServer_When_HttpClientWithWebProxyCallsHttp_Should_Work_Correct()
+    {
+        // Arrange
+        const string body = "example";
+        var settings = new WireMockServerSettings
+        {
+            HostingScheme = HostingScheme.Http
+        };
+        var server = WireMockServer.Start(settings);
+
+        // The response to an HTTP CONNECT method, which is used to establish a tunnel with a proxy, should typically be a 200 OK status code if the connection is successful.
+        // This indicates that a tunnel has been established successfully between the client and the server via the proxy. 
+        server
+            .Given(Request.Create()
+                .UsingConnect()
+            )
+            .RespondWith(Response.Create()
+                .WithBody("Connection established")
+            );
+
+        server
+            .Given(Request.Create()
+                .UsingGet()
+            )
+            .RespondWith(Response.Create()
+                .WithBody(body)
+            );
+
+        var httpUrl = server.Urls.First();
+
+        // Act
+        string result;
+        var currentProxy = HttpClient.DefaultProxy;
+        try
+        {
+            HttpClient.DefaultProxy = new WebProxy(httpUrl, false);
+
+            result = await new HttpClient().GetStringAsync(httpUrl).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Revert
+            HttpClient.DefaultProxy = currentProxy;
+        }
+
+        // Assert
+        result.Should().Be(body);
+
+        server.Stop();
+    }
+#endif
+
+#if NET6_0_OR_GREATER
+    private static string[] GetIPAddressesByFamily(AddressFamily addressFamily)
+    {
+        return NetworkInterface.GetAllNetworkInterfaces()
+            .Where(ni => ni.OperationalStatus == OperationalStatus.Up)
+            .SelectMany(ni => ni.GetIPProperties().UnicastAddresses)
+            .Where(addr => addr.Address.AddressFamily == addressFamily)
+            .Select(addr => addr.Address.ToString())
+            .ToArray();
+    }
+
+    [IgnoreOnContinuousIntegrationFact]
+    public async Task WireMockServer_WithUrl0000_Should_Listen_On_All_IPs_IPv4()
+    {
+        // Arrange
+        var port = PortUtils.FindFreeTcpPort();
+        var IPv4 = GetIPAddressesByFamily(System.Net.Sockets.AddressFamily.InterNetwork);
+        var settings = new WireMockServerSettings
+        {
+            Urls = ["http://0.0.0.0:" + port],
+        };
+        using var server = WireMockServer.Start(settings);
+
+        server.Given(Request.Create().WithPath("/*")).RespondWith(Response.Create().WithBody("x"));
+
+        foreach (var address in IPv4)
+        {
+            // Act
+            var response = await new HttpClient().GetStringAsync("http://" + address + ":" + server.Ports[0] + "/foo").ConfigureAwait(false);
+
+            // Assert
+            response.Should().Be("x");
+        }
+    }
+
+    [IgnoreOnContinuousIntegrationFact]
+    public async Task WireMockServer_WithUrl0000_Should_Listen_On_All_IPs_IPv6()
+    {
+        // Arrange
+        var port = PortUtils.FindFreeTcpPort();
+        var IPv6 = GetIPAddressesByFamily(System.Net.Sockets.AddressFamily.InterNetworkV6);
+        var settings = new WireMockServerSettings
+        {
+            Urls = ["http://0.0.0.0:" + port],
+        };
+        using var server = WireMockServer.Start(settings);
+
+        server.Given(Request.Create().WithPath("/*")).RespondWith(Response.Create().WithBody("x"));
+
+        foreach (var address in IPv6)
+        {
+            // Act
+            var response = await new HttpClient().GetStringAsync("http://[" + address + "]:" + server.Ports[0] + "/foo").ConfigureAwait(false);
+
+            // Assert
+            response.Should().Be("x");
+        }
+    }
+#endif
+
     [Fact]
     public async Task WireMockServer_Should_respond_a_redirect_without_body()
     {
@@ -110,27 +295,27 @@ public partial class WireMockServerTests
         server.Stop();
     }
 
-#if NETCOREAPP3_1 || NET5_0 || NET6_0 || NET7_0
+#if NETCOREAPP3_1 || NET5_0_OR_GREATER
     [Fact]
-public async Task WireMockServer_WithCorsPolicyOptions_Should_Work_Correct()
-{
-    // Arrange
-    var settings = new WireMockServerSettings
+    public async Task WireMockServer_WithCorsPolicyOptions_Should_Work_Correct()
     {
-        CorsPolicyOptions = CorsPolicyOptions.AllowAll
-    };
-    var server = WireMockServer.Start(settings);
+        // Arrange
+        var settings = new WireMockServerSettings
+        {
+            CorsPolicyOptions = CorsPolicyOptions.AllowAll
+        };
+        var server = WireMockServer.Start(settings);
 
-    server.Given(Request.Create().WithPath("/*")).RespondWith(Response.Create().WithBody("x"));
+        server.Given(Request.Create().WithPath("/*")).RespondWith(Response.Create().WithBody("x"));
 
-    // Act
-    var response = await new HttpClient().GetStringAsync("http://localhost:" + server.Ports[0] + "/foo").ConfigureAwait(false);
+        // Act
+        var response = await new HttpClient().GetStringAsync("http://localhost:" + server.Ports[0] + "/foo").ConfigureAwait(false);
 
-    // Asser.
-    response.Should().Be("x");
+        // Assert
+        response.Should().Be("x");
 
-    server.Stop();
-}
+        server.Stop();
+    }
 #endif
 
     [Fact]
@@ -152,7 +337,7 @@ public async Task WireMockServer_WithCorsPolicyOptions_Should_Work_Correct()
         await new HttpClient().GetStringAsync("http://localhost:" + server.Ports[0] + "/foo").ConfigureAwait(false);
         watch.Stop();
 
-        // Asser.
+        // Assert
         watch.ElapsedMilliseconds.Should().BeGreaterOrEqualTo(0);
 
         server.Stop();
@@ -230,7 +415,7 @@ public async Task WireMockServer_WithCorsPolicyOptions_Should_Work_Correct()
     //}
 
     [Fact]
-    public async Task WireMockServer_Should_exclude_restrictedResponseHeader()
+    public async Task WireMockServer_Should_Exclude_RestrictedResponseHeader()
     {
         // Assign
         string path = $"/foo_{Guid.NewGuid()}";
@@ -250,35 +435,55 @@ public async Task WireMockServer_WithCorsPolicyOptions_Should_Work_Correct()
         server.Stop();
     }
 
+    [Fact] // #720
+    public async Task WireMockServer_Should_AllowResponseHeaderContentLength_For_HEAD()
+    {
+        // Assign
+        const string length = "42";
+        var path = $"/cl_{Guid.NewGuid()}";
+        using var server = WireMockServer.Start();
+
+        server
+            .Given(Request.Create().WithPath(path).UsingHead())
+            .RespondWith(Response.Create().WithHeader(HttpKnownHeaderNames.ContentLength, length));
+
+        // Act
+        var httpRequestMessage = new HttpRequestMessage(HttpMethod.Head, path);
+        var response = await server.CreateClient().SendAsync(httpRequestMessage).ConfigureAwait(false);
+
+        // Assert
+        response.Content.Headers.GetValues(HttpKnownHeaderNames.ContentLength).Should().Contain(length);
+    }
+
 #if !NET452 && !NET461
-[Theory]
-[InlineData("TRACE")]
-[InlineData("GET")]
-public async Task WireMockServer_Should_exclude_body_for_methods_where_body_is_definitely_disallowed(string method)
-{
-    // Assign
-    string content = "hello";
-    var server = WireMockServer.Start();
+    [Theory]
+    [InlineData("TRACE")]
+    [InlineData("GET")]
+    public async Task WireMockServer_Should_exclude_body_for_methods_where_body_is_definitely_disallowed(string method)
+    {
+        // Assign
+        string content = "hello";
+        var server = WireMockServer.Start();
 
-    server
-        .Given(Request.Create().WithBody((byte[] bodyBytes) => bodyBytes != null))
-        .AtPriority(0)
-        .RespondWith(Response.Create().WithStatusCode(400));
-    server
-        .Given(Request.Create())
-        .AtPriority(1)
-        .RespondWith(Response.Create().WithStatusCode(200));
+        server
+            .Given(Request.Create().WithBody((byte[] bodyBytes) => bodyBytes != null))
+            .AtPriority(0)
+            .RespondWith(Response.Create().WithStatusCode(400));
+        server
+            .Given(Request.Create())
+            .AtPriority(1)
+            .RespondWith(Response.Create().WithStatusCode(200));
 
-    // Act
-    var request = new HttpRequestMessage(new HttpMethod(method), "http://localhost:" + server.Ports[0] + "/");
-    request.Content = new StringContent(content);
-    var response = await new HttpClient().SendAsync(request).ConfigureAwait(false);
+        // Act
+        var request = new HttpRequestMessage(new HttpMethod(method), "http://localhost:" + server.Ports[0] + "/");
+        request.Content = new StringContent(content);
+        var response = await new HttpClient().SendAsync(request).ConfigureAwait(false);
 
-    // Assert
-    Check.That(response.StatusCode).Equals(HttpStatusCode.OK);
+        // Assert
+        Check.That(response.StatusCode).Equals(HttpStatusCode.OK);
 
-    server.Stop();
-}
+        server.Stop();
+    }
 #endif
 
     [Theory]
@@ -436,11 +641,10 @@ public async Task WireMockServer_Should_exclude_body_for_methods_where_body_is_d
         settings.CustomMatcherMappings = new Dictionary<string, Func<MatcherModel, IMatcher>>();
         settings.CustomMatcherMappings[nameof(CustomPathParamMatcher)] = matcherModel =>
         {
-            var matcherParams = JsonConvert.DeserializeObject<CustomPathParamMatcherModel>((string)matcherModel.Pattern);
+            var matcherParams = JsonConvert.DeserializeObject<CustomPathParamMatcherModel>((string)matcherModel.Pattern!)!;
             return new CustomPathParamMatcher(
                 matcherModel.RejectOnMatch == true ? MatchBehaviour.RejectOnMatch : MatchBehaviour.AcceptOnMatch,
-                matcherParams.Path, matcherParams.PathParams,
-                settings.ThrowExceptionWhenMatcherFails == true
+                matcherParams.Path, matcherParams.PathParams
             );
         };
 
@@ -484,11 +688,10 @@ public async Task WireMockServer_Should_exclude_body_for_methods_where_body_is_d
         settings.CustomMatcherMappings = new Dictionary<string, Func<MatcherModel, IMatcher>>();
         settings.CustomMatcherMappings[nameof(CustomPathParamMatcher)] = matcherModel =>
         {
-            var matcherParams = JsonConvert.DeserializeObject<CustomPathParamMatcherModel>((string)matcherModel.Pattern);
+            var matcherParams = JsonConvert.DeserializeObject<CustomPathParamMatcherModel>((string)matcherModel.Pattern!)!;
             return new CustomPathParamMatcher(
                 matcherModel.RejectOnMatch == true ? MatchBehaviour.RejectOnMatch : MatchBehaviour.AcceptOnMatch,
-                matcherParams.Path, matcherParams.PathParams,
-                settings.ThrowExceptionWhenMatcherFails == true
+                matcherParams.Path, matcherParams.PathParams
             );
         };
 

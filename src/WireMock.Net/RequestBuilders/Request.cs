@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net and mock4net by Alexandre Victoor
+
 // This source file is based on mock4net by Alexandre Victoor which is licensed under the Apache 2.0 License.
 // For more details see 'mock4net/LICENSE.txt' and 'mock4net/readme.md' in this project root.
 using System;
@@ -15,6 +17,11 @@ namespace WireMock.RequestBuilders;
 public partial class Request : RequestMessageCompositeMatcher, IRequestBuilder
 {
     private readonly IList<IRequestMatcher> _requestMatchers;
+
+    /// <summary>
+    /// The link back to the Mapping.
+    /// </summary>
+    public IMapping Mapping { get; set; } = null!;
 
     /// <summary>
     /// Creates this instance.
@@ -63,5 +70,15 @@ public partial class Request : RequestMessageCompositeMatcher, IRequestBuilder
     {
         return _requestMatchers.OfType<T>().FirstOrDefault(func);
     }
-  
+
+    private IRequestBuilder Add<T>(T requestMatcher) where T : IRequestMatcher
+    {
+        foreach (var existing in _requestMatchers.OfType<T>().ToArray())
+        {
+            _requestMatchers.Remove(existing);
+        }
+
+        _requestMatchers.Add(requestMatcher);
+        return this;
+    }
 }

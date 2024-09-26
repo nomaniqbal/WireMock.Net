@@ -1,8 +1,9 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using JsonConverter.Abstractions;
 using WireMock.Matchers;
-using WireMock.Matchers.Request;
 using WireMock.Util;
 
 namespace WireMock.RequestBuilders;
@@ -10,7 +11,7 @@ namespace WireMock.RequestBuilders;
 /// <summary>
 /// The BodyRequestBuilder interface.
 /// </summary>
-public interface IBodyRequestBuilder : IRequestMatcher
+public interface IBodyRequestBuilder : IProtoBufRequestBuilder
 {
     /// <summary>
     /// WithBody: IMatcher
@@ -52,22 +53,12 @@ public interface IBodyRequestBuilder : IRequestMatcher
     IRequestBuilder WithBody(object body, MatchBehaviour matchBehaviour = MatchBehaviour.AcceptOnMatch);
 
     /// <summary>
-    /// WithBody : Body as a string response based on a object (which will be converted to a JSON string using NewtonSoft.Json).
+    /// WithBodyAsJson: A <see cref="JsonMatcher"/> will be used to match this object.
     /// </summary>
     /// <param name="body">The body.</param>
     /// <param name="matchBehaviour">The match behaviour [default is AcceptOnMatch].</param>
     /// <returns>A <see cref="IRequestBuilder"/>.</returns>
     IRequestBuilder WithBodyAsJson(object body, MatchBehaviour matchBehaviour = MatchBehaviour.AcceptOnMatch);
-
-    /// <summary>
-    /// WithBody : Body as a string response based on a object (which will be converted to a JSON string using the <see cref="IJsonConverter"/>).
-    /// </summary>
-    /// <param name="body">The body.</param>
-    /// <param name="converter">The JsonConverter.</param>
-    /// <param name="options">The <see cref="JsonConverterOptions"/> [optional].</param>
-    /// <param name="matchBehaviour">The match behaviour [default is AcceptOnMatch].</param>
-    /// <returns>A <see cref="IRequestBuilder"/>.</returns>
-    IRequestBuilder WithBodyAsJson(object body, IJsonConverter converter, JsonConverterOptions? options = null, MatchBehaviour matchBehaviour = MatchBehaviour.AcceptOnMatch);
 
     /// <summary>
     /// WithBody: func (string)
@@ -103,4 +94,12 @@ public interface IBodyRequestBuilder : IRequestMatcher
     /// <param name="func">The form-urlencoded values.</param>
     /// <returns>The <see cref="IRequestBuilder"/>.</returns>
     IRequestBuilder WithBody(Func<IDictionary<string, string>?, bool> func);
+
+    /// <summary>
+    /// WithBodyAsGraphQLSchema: Body as GraphQL schema as a string.
+    /// </summary>
+    /// <param name="body">The GraphQL schema.</param>
+    /// <param name="matchBehaviour">The match behaviour. (Default is <c>MatchBehaviour.AcceptOnMatch</c>).</param>
+    /// <returns>The <see cref="IRequestBuilder"/>.</returns>
+    IRequestBuilder WithBodyAsGraphQLSchema(string body, MatchBehaviour matchBehaviour = MatchBehaviour.AcceptOnMatch);
 }

@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 namespace WireMock.Matchers.Request;
 
 /// <summary>
@@ -30,11 +32,10 @@ internal class RequestMessageScenarioAndStateMatcher : IRequestMatcher
     /// <inheritdoc />
     public double GetMatchingScore(IRequestMessage requestMessage, IRequestMatchResult requestMatchResult)
     {
-        double score = IsMatch();
-        return requestMatchResult.AddScore(GetType(), score);
+        return requestMatchResult.AddScore(GetType(), GetScore(), null);
     }
 
-    private double IsMatch()
+    private double GetScore()
     {
         return Equals(_executionConditionState, _nextState) ? MatchScores.Perfect : MatchScores.Mismatch;
     }

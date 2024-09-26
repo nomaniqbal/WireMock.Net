@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 #if !(NET452 || NET461 || NETCOREAPP3_1)
 using System;
 using System.Threading.Tasks;
@@ -102,7 +104,7 @@ public partial class MappingConverterTests
         return Verifier.Verify(code, VerifySettings);
     }
 
-    private Mapping CreateMapping()
+    private IMapping CreateMapping()
     {
         var guid = new Guid("8e7b9ab7-e18e-4502-8bc9-11e6679811cc");
         var request = Request.Create()
@@ -119,7 +121,8 @@ public partial class MappingConverterTests
             .WithDelay(12345)
             .WithTransformer();
 
-        return new Mapping(
+        return new Mapping
+        (
             guid,
             _updatedAt,
             string.Empty,
@@ -137,7 +140,7 @@ public partial class MappingConverterTests
             false,
             null,
             data: null
-        );
+        ).WithProbability(0.3);
     }
 }
 #endif

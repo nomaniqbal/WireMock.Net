@@ -14,53 +14,62 @@ jobs:
       echo "BuildId = $(buildId)"
     displayName: 'Print buildId'
 
-  - task: UseDotNet@2
-    displayName: Use .NET 7.0
+  - task: CmdLine@2
+    displayName: 'Install .NET Aspire workload'
     inputs:
-      packageType: 'sdk'
-      version: '7.0.x'    
+      script: 'dotnet workload install aspire'
+
+  - script: |
+      dotnet tool install --global dotnet-sonarscanner
+      dotnet tool install --global dotnet-coverage
+    displayName: 'Install dotnet tools'
 
   - task: PowerShell@2
-    displayName: "Use JDK11 by default"
+    displayName: "Use JDK17 by default"
     inputs:
       targetType: 'inline'
       script: |
-        $jdkPath = $env:JAVA_HOME_11_X64
+        $jdkPath = $env:JAVA_HOME_17_X64
         Write-Host "##vso[task.setvariable variable=JAVA_HOME]$jdkPath"
 
   - script: |
       dotnet dev-certs https --trust || true
     displayName: 'dotnet dev-certs https'
   
-  - task: SonarCloudPrepare@1
-    displayName: 'Prepare analysis on SonarCloud'
+  # See: https://docs.sonarsource.com/sonarcloud/enriching/test-coverage/dotnet-test-coverage
+  - script: |
+      dotnet sonarscanner begin /k:"WireMock-Net_WireMock.Net" /o:"wiremock-net" /d:sonar.branch.name=$(Build.SourceBranchName) /d:sonar.host.url="https://sonarcloud.io" /d:sonar.token="$(SONAR_TOKEN)" /d:sonar.pullrequest.provider=github /d:sonar.cs.vscoveragexml.reportsPaths=**/wiremock-coverage-*.xml /d:sonar.verbose=true
+    displayName: 'Begin analysis on SonarCloud'
     condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest')) # Do not run for PullRequests
-    inputs:
-      SonarCloud: SonarCloud
-      organization: wiremock-net
-      projectKey: 'WireMock-Net_WireMock.Net'
-      projectName: 'WireMock.Net'
-      extraProperties: |
-        sonar.cs.opencover.reportsPaths=**/coverage.net7.0.opencover.xml
   
   - task: DotNetCoreCLI@2
     displayName: 'Build Unit tests'
     inputs:
       command: 'build'
-      projects: './test/WireMock.Net.Tests/WireMock.Net.Tests.csproj'
-      arguments: '--configuration Debug --framework net7.0'
+      projects: '**/test/**/*.csproj'
+      arguments: '--configuration Debug --framework net8.0'
 
   - task: CmdLine@2
     inputs:
-      script: 'dotnet test ./test/WireMock.Net.Tests/WireMock.Net.Tests.csproj --no-build --configuration Debug --framework net7.0'
-    displayName: 'Execute Unit Tests with Coverage'
-   
-  - task: SonarCloudAnalyze@1
-    displayName: 'SonarCloud: Run Code Analysis'
-    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest')) # Do not run for PullRequests
-  
-  - task: SonarCloudPublish@1
-    displayName: 'SonarCloud: Publish Quality Gate Result'
+      script: |
+          dotnet-coverage collect "dotnet test ./test/WireMock.Net.Tests/WireMock.Net.Tests.csproj --configuration Debug --no-build --framework net8.0" -f xml -o "wiremock-coverage-xunit.xml"
+          dotnet-coverage collect "dotnet test ./test/WireMock.Net.TUnitTests/WireMock.Net.TUnitTests.csproj --configuration Debug --no-build --framework net8.0" -f xml -o "wiremock-coverage-tunit.xml"
+    displayName: 'Execute WireMock.Net.Tests with Coverage'
+
+  - task: CmdLine@2
+    inputs:
+      script: |
+          dotnet-coverage collect "dotnet test ./test/WireMock.Net.Aspire.Tests/WireMock.Net.Aspire.Tests.csproj --configuration Debug --no-build" -f xml -o "wiremock-coverage-aspire.xml"
+    displayName: 'Execute WireMock.Net.Aspire.Tests with Coverage'
+
+  - task: CmdLine@2
+    displayName: 'Merge coverage files'
+    inputs:
+      script: 'dotnet coverage merge **/wiremock-coverage-*.xml --output ./test/wiremock-coverage.xml --output-format xml'
+
+  - script: |
+      dotnet sonarscanner end /d:sonar.token="$(SONAR_TOKEN)"
+    displayName: 'End analysis on SonarCloud'
     condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest')) # Do not run for PullRequests
   
   - task: whitesource.ws-bolt.bolt.wss.WhiteSource Bolt@19
@@ -68,8 +77,8 @@ jobs:
     condition: and(succeeded(), eq(variables['RUN_WHITESOURCE'], 'yes'))
  
   - script: |
-      bash <(curl https://codecov.io/bash) -t $(CODECOV_TOKEN) -f ./test/WireMock.Net.Tests/coverage.7.0.opencover.xml
-    displayName: 'codecov'
+      bash <(curl https://codecov.io/bash) -t $(CODECOV_TOKEN) -f ./test/wiremock-coverage.xml
+    displayName: 'Upload coverage results to codecov'
   
   - task: PublishTestResults@2
     condition: and(succeeded(), eq(variables['PUBLISH_TESTRESULTS'], 'yes'))
@@ -78,9 +87,9 @@ jobs:
       testResultsFiles: '**/*.trx'
   
   - task: PublishBuildArtifacts@1
-    displayName: Publish coverage file
+    displayName: Publish coverage files
     inputs:
-      PathtoPublish: './test/WireMock.Net.Tests/coverage.net7.0.opencover.xml'
+      PathtoPublish: './test/WireMock.Net.Tests/coverage.net8.0.opencover.xml'
 
 - job: Windows_Build_Test
 
@@ -89,24 +98,24 @@ jobs:
 
   steps:
   - task: UseDotNet@2
-    displayName: Use .NET 7.0
+    displayName: Use .NET 8.0
     inputs:
       packageType: 'sdk'
-      version: '7.0.x'
+      version: '8.0.x'
 
   - task: DotNetCoreCLI@2
     displayName: 'Build Unit tests'
     inputs:
       command: 'build'
       projects: './test/WireMock.Net.Tests/WireMock.Net.Tests.csproj'
-      arguments: '--configuration Debug --framework net7.0'
+      arguments: '--configuration Debug --framework net8.0'
   
   - task: DotNetCoreCLI@2
     displayName: 'Execute Unit Tests with Coverage'
     inputs:
       command: 'test'
       projects: './test/WireMock.Net.Tests/WireMock.Net.Tests.csproj'
-      arguments: '--no-build --configuration Debug --framework net7.0 --collect:"XPlat Code Coverage" --logger trx'
+      arguments: '--no-build --configuration Debug --framework net8.0 --collect:"XPlat Code Coverage" --logger trx'
   
 - job: Windows_Release_to_MyGet
   dependsOn: Windows_Build_Test
@@ -116,10 +125,10 @@ jobs:
 
   steps:
   - task: UseDotNet@2
-    displayName: Use .NET 7.0
+    displayName: Use .NET 8.0
     inputs:
       packageType: 'sdk'
-      version: '7.0.x'
+      version: '8.0.x'
 
   - task: DotNetCoreCLI@2
     displayName: Build Release

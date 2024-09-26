@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 #if !(NET452 || NET461 || NETCOREAPP3_1)
 using System;
 using System.Collections.Generic;
@@ -5,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
 using VerifyXunit;
+using WireMock.Matchers;
 using WireMock.Models;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
@@ -21,6 +24,23 @@ public partial class MappingConverterTests
     private readonly Guid _guid = new("c8eeaf99-d5c4-4341-8543-4597c3fd40d9");
     private readonly DateTime _updatedAt = new(2022, 12, 4, 11, 12, 13);
     private readonly WireMockServerSettings _settings = new();
+    private const string ProtoDefinition = @"
+syntax = ""proto3"";
+
+package greet;
+
+service Greeter {
+  rpc SayHello (HelloRequest) returns (HelloReply);
+}
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloReply {
+  string message = 1;
+}
+";
 
     private readonly MappingConverter _sut;
 
@@ -260,7 +280,7 @@ public partial class MappingConverterTests
     }
 
     [Fact]
-    public Task ToMappingModel_WithDelayAsMilliSeconds_ReturnsCorrectModel()
+    public Task ToMappingModel_WithDelay_ReturnsCorrectModel()
     {
         // Assign
         var delay = 1000;
@@ -323,5 +343,314 @@ public partial class MappingConverterTests
         // Verify
         return Verifier.Verify(model);
     }
+
+    [Fact]
+    public Task ToMappingModel_WithProbability_ReturnsCorrectModel()
+    {
+        // Assign
+        double probability = 0.4;
+        var request = Request.Create();
+        var response = Response.Create();
+        var mapping = new Mapping(_guid, _updatedAt, string.Empty, string.Empty, null, _settings, request, response, 42, null, null, null, null, null, false, null, data: null)
+            .WithProbability(probability);
+
+        // Act
+        var model = _sut.ToMappingModel(mapping);
+
+        // Assert
+        model.Should().NotBeNull();
+        model.Probability.Should().Be(0.4);
+
+        // Verify
+        return Verifier.Verify(model);
+    }
+
+    [Fact]
+    public Task ToMappingModel_Request_WithClientIP_ReturnsCorrectModel()
+    {
+        // Arrange
+        var request = Request.Create().WithClientIP("1.2.3.4");
+        var response = Response.Create();
+        var mapping = new Mapping(_guid, _updatedAt, string.Empty, string.Empty, null, _settings, request, response, 42, null, null, null, null, null, false, null, null);
+
+        // Act
+        var model = _sut.ToMappingModel(mapping);
+
+        // Assert
+        model.Should().NotBeNull();
+
+        // Verify
+        return Verifier.Verify(model);
+    }
+
+    [Fact]
+    public Task ToMappingModel_Request_WithHeader_And_Cookie_ReturnsCorrectModel()
+    {
+        // Assign
+        var request = Request.Create()
+            .WithHeader("MatchBehaviour.RejectOnMatch", "hv-1", MatchBehaviour.RejectOnMatch)
+            .WithHeader("MatchBehaviour.AcceptOnMatch", "hv-2", MatchBehaviour.AcceptOnMatch)
+            .WithHeader("IgnoreCase_false", "hv-3", false)
+            .WithHeader("IgnoreCase_true", "hv-4")
+            .WithHeader("ExactMatcher", new ExactMatcher("h-exact"))
+
+            .WithCookie("MatchBehaviour.RejectOnMatch", "cv-1", MatchBehaviour.RejectOnMatch)
+            .WithCookie("MatchBehaviour.AcceptOnMatch", "cv-2", MatchBehaviour.AcceptOnMatch)
+            .WithCookie("IgnoreCase_false", "cv-3", false)
+            .WithCookie("IgnoreCase_true", "cv-4")
+            .WithCookie("ExactMatcher", new ExactMatcher("c-exact"))
+            ;
+
+        var response = Response.Create();
+
+        var mapping = new Mapping(_guid, _updatedAt, null, null, null, _settings, request, response, 0, null, null, null, null, null, false, null, data: null);
+
+        // Act
+        var model = _sut.ToMappingModel(mapping);
+
+        // Assert
+        model.Should().NotBeNull();
+
+        // Verify
+        return Verifier.Verify(model);
+    }
+
+    [Fact]
+    public Task ToMappingModel_Response_WithHeader_ReturnsCorrectModel()
+    {
+        // Assign
+        var request = Request.Create();
+
+        var response = Response.Create()
+            .WithHeader("x1", "y")
+            .WithHeader("x2", "y", "z")
+            .WithHeaders(new Dictionary<string, string> { { "d", "test" } })
+            .WithHeaders(new Dictionary<string, string[]> { { "d[]", new[] { "v1", "v2" } } })
+            .WithHeaders(new Dictionary<string, WireMockList<string>> { { "w", new WireMockList<string>("x") } })
+            .WithHeaders(new Dictionary<string, WireMockList<string>> { { "w[]", new WireMockList<string>("x", "y") } });
+
+        var mapping = new Mapping(_guid, _updatedAt, null, null, null, _settings, request, response, 0, null, null, null, null, null, false, null, data: null);
+
+        // Act
+        var model = _sut.ToMappingModel(mapping);
+
+        // Assert
+        model.Should().NotBeNull();
+
+        // Verify
+        return Verifier.Verify(model);
+    }
+
+    [Fact]
+    public Task ToMappingModel_Response_WithHeaders_ReturnsCorrectModel()
+    {
+        // Assign
+        var request = Request.Create();
+
+        var response = Response.Create()
+            .WithHeaders(new Dictionary<string, WireMockList<string>> { { "w[]", new WireMockList<string>("x", "y") } });
+
+        var mapping = new Mapping(_guid, _updatedAt, null, null, null, _settings, request, response, 0, null, null, null, null, null, false, null, data: null);
+
+        // Act
+        var model = _sut.ToMappingModel(mapping);
+
+        // Assert
+        model.Should().NotBeNull();
+
+        // Verify
+        return Verifier.Verify(model);
+    }
+
+#if TRAILINGHEADERS
+    [Fact]
+    public Task ToMappingModel_Response_WithTrailingHeader_ReturnsCorrectModel()
+    {
+        // Assign
+        var request = Request.Create();
+
+        var response = Response.Create()
+            .WithTrailingHeader("x1", "y")
+            .WithTrailingHeader("x2", "y", "z");
+
+        var mapping = new Mapping(_guid, _updatedAt, null, null, null, _settings, request, response, 0, null, null, null, null, null, false, null, data: null);
+
+        // Act
+        var model = _sut.ToMappingModel(mapping);
+
+        // Assert
+        model.Should().NotBeNull();
+
+        // Verify
+        return Verifier.Verify(model);
+    }
+
+    [Fact]
+    public Task ToMappingModel_Response_WithTrailingHeaders_ReturnsCorrectModel()
+    {
+        // Assign
+        var request = Request.Create();
+
+        var response = Response.Create()
+            .WithTrailingHeaders(new Dictionary<string, WireMockList<string>> { { "w[]", new WireMockList<string>("x", "y") } });
+
+        var mapping = new Mapping(_guid, _updatedAt, null, null, null, _settings, request, response, 0, null, null, null, null, null, false, null, data: null);
+
+        // Act
+        var model = _sut.ToMappingModel(mapping);
+
+        // Assert
+        model.Should().NotBeNull();
+
+        // Verify
+        return Verifier.Verify(model);
+    }
+#endif
+
+    [Fact]
+    public Task ToMappingModel_WithParam_ReturnsCorrectModel()
+    {
+        // Assign
+        var request = Request.Create()
+                .WithParam("MatchBehaviour.RejectOnMatch", MatchBehaviour.RejectOnMatch)
+                .WithParam("MatchBehaviour.RejectOnMatch|IgnoreCase_false", false, MatchBehaviour.RejectOnMatch)
+                .WithParam("IgnoreCase_false", false, "pv-3a", "pv-3b")
+                .WithParam("IgnoreCase_true", true, "pv-3a", "pv-3b")
+                .WithParam("ExactMatcher", new ExactMatcher("exact"))
+            ;
+        var response = Response.Create();
+        var mapping = new Mapping(_guid, _updatedAt, null, null, null, _settings, request, response, 0, null, null, null, null, null, false, null, data: null);
+
+        // Act
+        var model = _sut.ToMappingModel(mapping);
+
+        // Assert
+        model.Should().NotBeNull();
+
+        // Verify
+        return Verifier.Verify(model);
+    }
+
+#if GRAPHQL
+    [Fact]
+    public Task ToMappingModel_Request_WithBodyAsGraphQLSchema_ReturnsCorrectModel()
+    {
+        // Arrange
+        const string schema = @"
+  type Query {
+   greeting:String
+   students:[Student]
+   studentById(id:ID!):Student
+  }
+
+  type Student {
+   id:ID!
+   firstName:String
+   lastName:String
+   fullName:String 
+  }";
+        var request = Request.Create().WithBodyAsGraphQLSchema(schema);
+        var response = Response.Create();
+        var mapping = new Mapping(_guid, _updatedAt, string.Empty, string.Empty, null, _settings, request, response, 42, null, null, null, null, null, false, null, null);
+
+        // Act
+        var model = _sut.ToMappingModel(mapping);
+
+        // Assert
+        model.Should().NotBeNull();
+
+        // Verify
+        return Verifier.Verify(model);
+    }
+#endif
+
+#if PROTOBUF
+    [Fact]
+    public Task ToMappingModel_Request_WithBodyAsProtoBuf_ReturnsCorrectModel()
+    {
+        // Arrange
+        var jsonMatcher = new JsonMatcher(new { name = "stef" });
+
+        var request = Request.Create()
+            .UsingPost()
+            .WithPath("/grpc/greet.Greeter/SayHello")
+            .WithBodyAsProtoBuf(ProtoDefinition, "greet.HelloRequest", jsonMatcher);
+
+        var response = Response.Create();
+
+        var mapping = new Mapping(_guid, _updatedAt, string.Empty, string.Empty, null, _settings, request, response, 41, null, null, null, null, null, false, null, null);
+
+        // Act
+        var model = _sut.ToMappingModel(mapping);
+
+        // Assert
+        model.Should().NotBeNull();
+
+        // Verify
+        return Verifier.Verify(model);
+    }
+
+    [Fact]
+    public Task ToMappingModel_Response_WithBodyAsProtoBuf_ReturnsCorrectModel()
+    {
+        // Arrange
+        var protobufResponse = new
+        {
+            message = "hello"
+        };
+
+        var request = Request.Create();
+
+        var response = Response.Create()
+            .WithBodyAsProtoBuf(ProtoDefinition, "greet.HelloReply", protobufResponse)
+            .WithTrailingHeader("grpc-status", "0");
+
+        var mapping = new Mapping(_guid, _updatedAt, string.Empty, string.Empty, null, _settings, request, response, 43, null, null, null, null, null, false, null, null);
+
+        // Act
+        var model = _sut.ToMappingModel(mapping);
+
+        // Assert
+        model.Should().NotBeNull();
+
+        // Verify
+        return Verifier.Verify(model);
+    }
+
+    [Fact]
+    public Task ToMappingModel_Mapping_WithBodyAsProtoBuf_ReturnsCorrectModel()
+    {
+        // Arrange
+        var jsonMatcher = new JsonMatcher(new { name = "stef" });
+        var protobufResponse = new
+        {
+            message = "hello"
+        };
+
+        var request = Request.Create()
+            .UsingPost()
+            .WithPath("/grpc/greet.Greeter/SayHello")
+            .WithBodyAsProtoBuf("greet.HelloRequest", jsonMatcher);
+
+        var response = Response.Create()
+            .WithBodyAsProtoBuf("greet.HelloReply", protobufResponse)
+            .WithTrailingHeader("grpc-status", "0");
+
+        var mapping = new Mapping(_guid, _updatedAt, string.Empty, string.Empty, null, _settings, request, response, 41, null, null, null, null, null, false, null, null)
+            .WithProtoDefinition(new (null, ProtoDefinition));
+
+        ((Request)request).Mapping = mapping;
+        ((Response)response).Mapping = mapping;
+
+        // Act
+        var model = _sut.ToMappingModel(mapping);
+
+        // Assert
+        model.Should().NotBeNull();
+
+        // Verify
+        return Verifier.Verify(model);
+    }
+#endif
 }
 #endif

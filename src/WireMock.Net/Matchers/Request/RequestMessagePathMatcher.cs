@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -43,7 +45,7 @@ public class RequestMessagePathMatcher : IRequestMatcher
         MatchOperator matchOperator,
         params string[] paths) :
         this(matchBehaviour, matchOperator, paths
-            .Select(path => new WildcardMatcher(matchBehaviour, new AnyOf<string, StringPattern>[] { path }, false, false, matchOperator))
+            .Select(path => new WildcardMatcher(matchBehaviour, new AnyOf<string, StringPattern>[] { path }, false, matchOperator))
             .Cast<IStringMatcher>().ToArray())
     {
         Behaviour = matchBehaviour;
@@ -75,16 +77,16 @@ public class RequestMessagePathMatcher : IRequestMatcher
     /// <inheritdoc />
     public double GetMatchingScore(IRequestMessage requestMessage, IRequestMatchResult requestMatchResult)
     {
-        double score = IsMatch(requestMessage);
-        return requestMatchResult.AddScore(GetType(), score);
+        var (score, exception) = GetMatchResult(requestMessage).Expand();
+        return requestMatchResult.AddScore(GetType(), score, exception);
     }
 
-    private double IsMatch(IRequestMessage requestMessage)
+    private MatchResult GetMatchResult(IRequestMessage requestMessage)
     {
         if (Matchers != null)
         {
             var results = Matchers.Select(m => m.IsMatch(requestMessage.Path)).ToArray();
-            return MatchScores.ToScore(results, MatchOperator);
+            return MatchResult.From(results, MatchOperator);
         }
 
         if (Funcs != null)
@@ -93,6 +95,6 @@ public class RequestMessagePathMatcher : IRequestMatcher
             return MatchScores.ToScore(results, MatchOperator);
         }
 
-        return MatchScores.Mismatch;
+        return default;
     }
 }

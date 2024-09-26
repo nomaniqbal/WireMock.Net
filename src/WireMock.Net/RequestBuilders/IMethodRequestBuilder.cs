@@ -1,5 +1,5 @@
-using System;
-using JetBrains.Annotations;
+// Copyright © WireMock.Net
+
 using WireMock.Matchers;
 
 namespace WireMock.RequestBuilders;

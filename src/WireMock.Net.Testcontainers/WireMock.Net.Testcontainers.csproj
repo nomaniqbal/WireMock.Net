@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <Description>A fluent testcontainer builder for the Docker version of WireMock.Net</Description>
+        <TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <PackageTags>wiremock;docker;testcontainer;testcontainers</PackageTags>
+        <ProjectGuid>{12B016A5-9D8B-4EFE-96C2-CA51BE43367D}</ProjectGuid>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <CodeAnalysisRuleSet>../WireMock.Net/WireMock.Net.ruleset</CodeAnalysisRuleSet>
+        <SignAssembly>true</SignAssembly>
+        <AssemblyOriginatorKeyFile>../WireMock.Net/WireMock.Net.snk</AssemblyOriginatorKeyFile>
+        <PublicSign Condition=" '$(OS)' != 'Windows_NT' ">true</PublicSign>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <Compile Include="..\WireMock.Net\Http\HttpClientFactory2.cs" Link="Http\HttpClientFactory2.cs" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="IsExternalInit" Version="1.0.3">
+          <PrivateAssets>all</PrivateAssets>
+          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="Stef.Validation" Version="0.1.1" />
+        <PackageReference Include="Testcontainers" Version="3.10.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\WireMock.Net.RestClient\WireMock.Net.RestClient.csproj" />
+    </ItemGroup>
+    
+</Project>

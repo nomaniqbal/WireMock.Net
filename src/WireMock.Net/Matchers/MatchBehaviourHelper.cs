@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 namespace WireMock.Matchers;
 
 internal static class MatchBehaviourHelper
@@ -22,5 +24,12 @@ internal static class MatchBehaviourHelper
         }
 
         return match <= MatchScores.Tolerance ? MatchScores.Perfect : MatchScores.Mismatch;
+    }
+
+    internal static MatchResult Convert(MatchBehaviour matchBehaviour, MatchResult result)
+    {
+        return matchBehaviour == MatchBehaviour.AcceptOnMatch ?
+            result :
+            new MatchResult(Convert(matchBehaviour, result.Score), result.Exception);
     }
 }

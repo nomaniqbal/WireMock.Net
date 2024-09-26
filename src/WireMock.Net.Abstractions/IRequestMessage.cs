@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 #if NETSTANDARD1_3_OR_GREATER || NET461
@@ -64,6 +66,11 @@ public interface IRequestMessage
     string Method { get; }
 
     /// <summary>
+    /// Gets the HTTP Version.
+    /// </summary>
+    string HttpVersion { get; }
+
+    /// <summary>
     /// Gets the headers.
     /// </summary>
     IDictionary<string, WireMockList<string>>? Headers { get; }
@@ -94,34 +101,45 @@ public interface IRequestMessage
     IBodyData? BodyData { get; }
 
     /// <summary>
-    /// The original body as string. Convenience getter for Handlebars.
+    /// The original body as string.
+    /// Convenience getter for Handlebars and WireMockAssertions.
     /// </summary>
-    string Body { get; }
+    string? Body { get; }
 
     /// <summary>
-    /// The body (as JSON object). Convenience getter for Handlebars.
+    /// The body (as JSON object).
+    /// Convenience getter for Handlebars and WireMockAssertions.
     /// </summary>
-    object BodyAsJson { get; }
+    object? BodyAsJson { get; }
 
     /// <summary>
-    /// The body (as bytearray). Convenience getter for Handlebars.
+    /// The body (as bytearray).
+    /// Convenience getter for Handlebars and WireMockAssertions.
     /// </summary>
-    byte[] BodyAsBytes { get; }
+    byte[]? BodyAsBytes { get; }
+
+#if MIMEKIT
+    /// <summary>
+    /// The original body as MimeMessage.
+    /// Convenience getter for Handlebars and WireMockAssertions.
+    /// </summary>
+    object? BodyAsMimeMessage { get; }
+#endif
 
     /// <summary>
     /// The detected body type. Convenience getter for Handlebars.
     /// </summary>
-    string DetectedBodyType { get; }
+    string? DetectedBodyType { get; }
 
     /// <summary>
     /// The detected body type from the Content-Type header. Convenience getter for Handlebars.
     /// </summary>
-    string DetectedBodyTypeFromContentType { get; }
+    string? DetectedBodyTypeFromContentType { get; }
 
     /// <summary>
     /// The detected compression from the Content-Encoding header. Convenience getter for Handlebars.
     /// </summary>
-    string DetectedCompression { get; }
+    string? DetectedCompression { get; }
 
     /// <summary>
     /// Gets the Host
@@ -142,6 +160,14 @@ public interface IRequestMessage
     /// Gets the origin
     /// </summary>
     string Origin { get; }
+
+    /// <summary>
+    /// Get a query parameter.
+    /// </summary>
+    /// <param name="key">The key.</param>
+    /// <param name="ignoreCase">Defines if the key should be matched using case-ignore.</param>
+    /// <returns>The query parameter value as WireMockList or null when not found.</returns>
+    WireMockList<string>? GetParameter(string key, bool ignoreCase = false);
 
 #if NETSTANDARD1_3_OR_GREATER || NET461
     /// <summary>

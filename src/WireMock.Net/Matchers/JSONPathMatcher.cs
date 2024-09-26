@@ -1,33 +1,37 @@
+// Copyright © WireMock.Net
+
+using System;
 using System.Linq;
 using AnyOfTypes;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Stef.Validation;
 using WireMock.Extensions;
 using WireMock.Models;
+using WireMock.Util;
 
 namespace WireMock.Matchers;
 
 /// <summary>
 /// JsonPathMatcher
 /// </summary>
-/// <seealso cref="IMatcher" />
+/// <seealso cref="IStringMatcher" />
 /// <seealso cref="IObjectMatcher" />
 public class JsonPathMatcher : IStringMatcher, IObjectMatcher
 {
     private readonly AnyOf<string, StringPattern>[] _patterns;
 
-    /// <inheritdoc cref="IMatcher.MatchBehaviour"/>
+    /// <inheritdoc />
     public MatchBehaviour MatchBehaviour { get; }
 
-    /// <inheritdoc cref="IMatcher.ThrowException"/>
-    public bool ThrowException { get; }
+    /// <inheritdoc />
+    public object Value { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="JsonPathMatcher"/> class.
     /// </summary>
     /// <param name="patterns">The patterns.</param>
-    public JsonPathMatcher(params string[] patterns) : this(MatchBehaviour.AcceptOnMatch, false, MatchOperator.Or, patterns.ToAnyOfPatterns())
+    public JsonPathMatcher(params string[] patterns) : this(MatchBehaviour.AcceptOnMatch, MatchOperator.Or,
+        patterns.ToAnyOfPatterns())
     {
     }
 
@@ -35,7 +39,8 @@ public class JsonPathMatcher : IStringMatcher, IObjectMatcher
     /// Initializes a new instance of the <see cref="JsonPathMatcher"/> class.
     /// </summary>
     /// <param name="patterns">The patterns.</param>
-    public JsonPathMatcher(params AnyOf<string, StringPattern>[] patterns) : this(MatchBehaviour.AcceptOnMatch, false, MatchOperator.Or, patterns)
+    public JsonPathMatcher(params AnyOf<string, StringPattern>[] patterns) : this(MatchBehaviour.AcceptOnMatch,
+        MatchOperator.Or, patterns)
     {
     }
 
@@ -43,68 +48,63 @@ public class JsonPathMatcher : IStringMatcher, IObjectMatcher
     /// Initializes a new instance of the <see cref="JsonPathMatcher"/> class.
     /// </summary>
     /// <param name="matchBehaviour">The match behaviour.</param>
-    /// <param name="throwException">Throw an exception when the internal matching fails because of invalid input.</param>
     /// <param name="matchOperator">The <see cref="Matchers.MatchOperator"/> to use. (default = "Or")</param>
     /// <param name="patterns">The patterns.</param>
     public JsonPathMatcher(
         MatchBehaviour matchBehaviour,
-        bool throwException = false,
         MatchOperator matchOperator = MatchOperator.Or,
         params AnyOf<string, StringPattern>[] patterns)
     {
         _patterns = Guard.NotNull(patterns);
         MatchBehaviour = matchBehaviour;
-        ThrowException = throwException;
         MatchOperator = matchOperator;
+        Value = patterns;
     }
 
-    /// <inheritdoc cref="IStringMatcher.IsMatch"/>
-    public double IsMatch(string? input)
+    /// <inheritdoc />
+    public MatchResult IsMatch(string? input)
     {
-        double match = MatchScores.Mismatch;
+        var score = MatchScores.Mismatch;
+        Exception? exception = null;
+
         if (input != null)
         {
             try
             {
                 var jToken = JToken.Parse(input);
-                match = IsMatch(jToken);
+                score = IsMatch(jToken);
             }
-            catch (JsonException)
+            catch (Exception ex)
             {
-                if (ThrowException)
-                {
-                    throw;
-                }
+                exception = ex;
             }
         }
 
-        return MatchBehaviourHelper.Convert(MatchBehaviour, match);
+        return new MatchResult(MatchBehaviourHelper.Convert(MatchBehaviour, score), exception);
     }
 
-    /// <inheritdoc cref="IObjectMatcher.IsMatch"/>
-    public double IsMatch(object? input)
+    /// <inheritdoc />
+    public MatchResult IsMatch(object? input)
     {
-        double match = MatchScores.Mismatch;
+        var score = MatchScores.Mismatch;
+        Exception? exception = null;
 
         // When input is null or byte[], return Mismatch.
-        if (input != null && !(input is byte[]))
+        if (input != null && input is not byte[])
         {
             try
             {
                 // Check if JToken or object
                 JToken jToken = input as JToken ?? JObject.FromObject(input);
-                match = IsMatch(jToken);
+                score = IsMatch(jToken);
             }
-            catch (JsonException)
+            catch (Exception ex)
             {
-                if (ThrowException)
-                {
-                    throw;
-                }
+                exception = ex;
             }
         }
 
-        return MatchBehaviourHelper.Convert(MatchBehaviour, match);
+        return new MatchResult(MatchBehaviourHelper.Convert(MatchBehaviour, score), exception);
     }
 
     /// <inheritdoc />
@@ -116,11 +116,52 @@ public class JsonPathMatcher : IStringMatcher, IObjectMatcher
     /// <inheritdoc />
     public MatchOperator MatchOperator { get; }
 
-    /// <inheritdoc cref="IMatcher.Name"/>
-    public string Name => "JsonPathMatcher";
+    /// <inheritdoc />
+    public string Name => nameof(JsonPathMatcher);
+
+    /// <inheritdoc />
+    public string GetCSharpCodeArguments()
+    {
+        return $"new {Name}" +
+               $"(" +
+               $"{MatchBehaviour.GetFullyQualifiedEnumValue()}, " +
+               $"{MatchOperator.GetFullyQualifiedEnumValue()}, " +
+               $"{MappingConverterUtils.ToCSharpCodeArguments(_patterns)}" +
+               $")";
+    }
 
     private double IsMatch(JToken jToken)
     {
-        return MatchScores.ToScore(_patterns.Select(pattern => jToken.SelectToken(pattern.GetPattern()) != null).ToArray(), MatchOperator);
+        var array = ConvertJTokenToJArrayIfNeeded(jToken);
+
+        // The SelectToken method can accept a string path to a child token ( i.e. "Manufacturers[0].Products[0].Price").
+        // In that case it will return a JValue (some type) which does not implement the IEnumerable interface.
+        var values = _patterns.Select(pattern => array.SelectToken(pattern.GetPattern()) != null).ToArray();
+
+        return MatchScores.ToScore(values, MatchOperator);
+    }
+
+    // https://github.com/WireMock-Net/WireMock.Net/issues/965
+    // https://stackoverflow.com/questions/66922188/newtonsoft-jsonpath-with-c-sharp-syntax
+    // Filtering using SelectToken() isn't guaranteed to work for objects inside objects -- only objects inside arrays.
+    // So this code checks if it's an JArray, if it's not an array, construct a new JArray.
+    private static JToken ConvertJTokenToJArrayIfNeeded(JToken jToken)
+    {
+        if (jToken.Count() == 1)
+        {
+            var property = jToken.First();
+            var item = property.First();
+            if (item is JArray)
+            {
+                return jToken;
+            }
+
+            return new JObject
+            {
+                [property.Path] = new JArray(item)
+            };
+        }
+
+        return jToken;
     }
 }

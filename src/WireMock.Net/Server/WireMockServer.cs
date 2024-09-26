@@ -1,21 +1,26 @@
+// Copyright © WireMock.Net and mock4net by Alexandre Victoor
+
 // This source file is based on mock4net by Alexandre Victoor which is licensed under the Apache 2.0 License.
 // For more details see 'mock4net/LICENSE.txt' and 'mock4net/readme.md' in this project root.
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
+using AnyOfTypes;
 using JetBrains.Annotations;
 using Newtonsoft.Json;
 using Stef.Validation;
 using WireMock.Admin.Mappings;
 using WireMock.Authentication;
+using WireMock.Constants;
 using WireMock.Exceptions;
 using WireMock.Handlers;
 using WireMock.Http;
 using WireMock.Logging;
-using WireMock.Matchers.Request;
+using WireMock.Models;
 using WireMock.Owin;
 using WireMock.RequestBuilders;
 using WireMock.ResponseProviders;
@@ -43,9 +48,13 @@ public partial class WireMockServer : IWireMockServer
     private readonly IGuidUtils _guidUtils = new GuidUtils();
     private readonly IDateTimeUtils _dateTimeUtils = new DateTimeUtils();
 
-    /// <inheritdoc cref="IWireMockServer.IsStarted" />
+    /// <inheritdoc />
     [PublicAPI]
     public bool IsStarted => _httpServer is { IsStarted: true };
+
+    /// <inheritdoc />
+    [PublicAPI]
+    public bool IsStartedWithAdminInterface => IsStarted && _settings.StartAdminInterface.GetValueOrDefault();
 
     /// <inheritdoc />
     [PublicAPI]
@@ -136,6 +145,31 @@ public partial class WireMockServer : IWireMockServer
     }
 
     /// <summary>
+    /// Create a <see cref="HttpClient"/> which can be used to call this instance.
+    /// <param name="handlers">
+    /// <param name="innerHandler">The inner handler represents the destination of the HTTP message channel.</param>
+    /// An ordered list of System.Net.Http.DelegatingHandler instances to be invoked
+    /// as an System.Net.Http.HttpRequestMessage travels from the System.Net.Http.HttpClient
+    /// to the network and an System.Net.Http.HttpResponseMessage travels from the network
+    /// back to System.Net.Http.HttpClient. The handlers are invoked in a top-down fashion.
+    /// That is, the first entry is invoked first for an outbound request message but
+    /// last for an inbound response message.
+    /// </param>
+    /// </summary>
+    [PublicAPI]
+    public HttpClient CreateClient(HttpMessageHandler innerHandler, params DelegatingHandler[] handlers)
+    {
+        if (!IsStarted)
+        {
+            throw new InvalidOperationException("Unable to create HttpClient because the service is not started.");
+        }
+
+        var client = HttpClientFactory2.Create(innerHandler, handlers);
+        client.BaseAddress = new Uri(Url!);
+        return client;
+    }
+
+    /// <summary>
     /// Create <see cref="HttpClient"/>s (one for each URL) which can be used to call this instance.
     /// <param name="innerHandler">The inner handler represents the destination of the HTTP message channel.</param>
     /// <param name="handlers">
@@ -179,18 +213,37 @@ public partial class WireMockServer : IWireMockServer
     }
 
     /// <summary>
+    /// Starts this WireMockServer with the specified settings.
+    /// </summary>
+    /// <param name="action">The action to configure the WireMockServerSettings.</param>
+    /// <returns>The <see cref="WireMockServer"/>.</returns>
+    [PublicAPI]
+    public static WireMockServer Start(Action<WireMockServerSettings> action)
+    {
+        Guard.NotNull(action);
+
+        var settings = new WireMockServerSettings();
+
+        action(settings);
+
+        return new WireMockServer(settings);
+    }
+
+    /// <summary>
     /// Start this WireMockServer.
     /// </summary>
     /// <param name="port">The port.</param>
-    /// <param name="ssl">The SSL support.</param>
+    /// <param name="useSSL">The SSL support.</param>
+    /// <param name="useHttp2">Use HTTP 2 (needed for Grpc).</param>
     /// <returns>The <see cref="WireMockServer"/>.</returns>
     [PublicAPI]
-    public static WireMockServer Start(int? port = 0, bool ssl = false)
+    public static WireMockServer Start(int? port = 0, bool useSSL = false, bool useHttp2 = false)
     {
         return new WireMockServer(new WireMockServerSettings
         {
             Port = port,
-            UseSSL = ssl
+            UseSSL = useSSL,
+            UseHttp2 = useHttp2
         });
     }
 
@@ -202,7 +255,7 @@ public partial class WireMockServer : IWireMockServer
     [PublicAPI]
     public static WireMockServer Start(params string[] urls)
     {
-        Guard.NotNullOrEmpty(urls, nameof(urls));
+        Guard.NotNullOrEmpty(urls);
 
         return new WireMockServer(new WireMockServerSettings
         {
@@ -214,15 +267,17 @@ public partial class WireMockServer : IWireMockServer
     /// Start this WireMockServer with the admin interface.
     /// </summary>
     /// <param name="port">The port.</param>
-    /// <param name="ssl">The SSL support.</param>
+    /// <param name="useSSL">The SSL support.</param>
+    /// <param name="useHttp2">Use HTTP 2 (needed for Grpc).</param>
     /// <returns>The <see cref="WireMockServer"/>.</returns>
     [PublicAPI]
-    public static WireMockServer StartWithAdminInterface(int? port = 0, bool ssl = false)
+    public static WireMockServer StartWithAdminInterface(int? port = 0, bool useSSL = false, bool useHttp2 = false)
     {
         return new WireMockServer(new WireMockServerSettings
         {
             Port = port,
-            UseSSL = ssl,
+            UseSSL = useSSL,
+            UseHttp2 = useHttp2,
             StartAdminInterface = true
         });
     }
@@ -235,7 +290,7 @@ public partial class WireMockServer : IWireMockServer
     [PublicAPI]
     public static WireMockServer StartWithAdminInterface(params string[] urls)
     {
-        Guard.NotNullOrEmpty(urls, nameof(urls));
+        Guard.NotNullOrEmpty(urls);
 
         return new WireMockServer(new WireMockServerSettings
         {
@@ -298,6 +353,7 @@ public partial class WireMockServer : IWireMockServer
                 urlOptions = new HostUrlOptions
                 {
                     HostingScheme = settings.HostingScheme.Value,
+                    UseHttp2 = settings.UseHttp2,
                     Port = settings.Port
                 };
             }
@@ -306,14 +362,16 @@ public partial class WireMockServer : IWireMockServer
                 urlOptions = new HostUrlOptions
                 {
                     HostingScheme = settings.UseSSL == true ? HostingScheme.Https : HostingScheme.Http,
+                    UseHttp2 = settings.UseHttp2,
                     Port = settings.Port
                 };
             }
         }
 
-        WireMockMiddlewareOptionsHelper.InitFromSettings(settings, _options);
-
-        _options.LogEntries.CollectionChanged += LogEntries_CollectionChanged;
+        WireMockMiddlewareOptionsHelper.InitFromSettings(settings, _options, o =>
+        {
+            o.LogEntries.CollectionChanged += LogEntries_CollectionChanged;
+        });
 
         _matcherMapper = new MatcherMapper(_settings);
         _mappingConverter = new MappingConverter(_matcherMapper);
@@ -387,7 +445,7 @@ public partial class WireMockServer : IWireMockServer
         Given(Request.Create().WithPath("/*").UsingAnyMethod())
             .WithGuid(Guid.Parse("90008000-0000-4444-a17e-669cd84f1f05"))
             .AtPriority(1000)
-            .RespondWith(new DynamicResponseProvider(_ => ResponseMessageBuilder.Create("No matching mapping found", 404)));
+            .RespondWith(new DynamicResponseProvider(_ => ResponseMessageBuilder.Create(HttpStatusCode.NotFound, WireMockConstants.NoMatchingFound)));
     }
 
     /// <inheritdoc cref="IWireMockServer.Reset" />
@@ -395,6 +453,8 @@ public partial class WireMockServer : IWireMockServer
     public void Reset()
     {
         ResetLogEntries();
+
+        ResetScenarios();
 
         ResetMappings();
     }
@@ -462,8 +522,8 @@ public partial class WireMockServer : IWireMockServer
     [PublicAPI]
     public void SetBasicAuthentication(string username, string password)
     {
-        Guard.NotNull(username, nameof(username));
-        Guard.NotNull(password, nameof(password));
+        Guard.NotNull(username);
+        Guard.NotNull(password);
 
         _options.AuthenticationMatcher = new BasicAuthenticationMatcher(username, password);
     }
@@ -529,15 +589,46 @@ public partial class WireMockServer : IWireMockServer
     }
 
     /// <summary>
-    /// The given.
+    /// Add a Grpc ProtoDefinition at server-level.
     /// </summary>
-    /// <param name="requestMatcher">The request matcher.</param>
-    /// <param name="saveToFile">Optional boolean to indicate if this mapping should be saved as static mapping file.</param>
-    /// <returns>The <see cref="IRespondWithAProvider"/>.</returns>
+    /// <param name="id">Unique identifier for the ProtoDefinition.</param>
+    /// <param name="protoDefinition">The ProtoDefinition as text.</param>
+    /// <returns><see cref="WireMockServer"/></returns>
     [PublicAPI]
-    public IRespondWithAProvider Given(IRequestMatcher requestMatcher, bool saveToFile = false)
+    public WireMockServer AddProtoDefinition(string id, string protoDefinition)
     {
-        return _mappingBuilder.Given(requestMatcher, saveToFile);
+        Guard.NotNullOrWhiteSpace(id);
+        Guard.NotNullOrWhiteSpace(protoDefinition);
+
+        _settings.ProtoDefinitions ??= new Dictionary<string, string>();
+
+        _settings.ProtoDefinitions[id] = protoDefinition;
+
+        return this;
+    }
+
+    /// <summary>
+    /// Add a GraphQL Schema at server-level.
+    /// </summary>
+    /// <param name="id">Unique identifier for the GraphQL Schema.</param>
+    /// <param name="graphQLSchema">The GraphQL Schema as string or StringPattern.</param>
+    /// <param name="customScalars">A dictionary defining the custom scalars used in this schema. [optional]</param>
+    /// <returns><see cref="WireMockServer"/></returns>
+    [PublicAPI]
+    public WireMockServer AddGraphQLSchema(string id, AnyOf<string, StringPattern> graphQLSchema, Dictionary<string, Type>? customScalars = null)
+    {
+        Guard.NotNullOrWhiteSpace(id);
+        Guard.NotNullOrWhiteSpace(graphQLSchema);
+
+        _settings.GraphQLSchemas ??= new Dictionary<string, GraphQLSchemaDetails>();
+
+        _settings.GraphQLSchemas[id] = new GraphQLSchemaDetails
+        {
+            SchemaAsString = graphQLSchema,
+            CustomScalars = customScalars
+        };
+
+        return this;
     }
 
     /// <inheritdoc />
@@ -558,13 +649,11 @@ public partial class WireMockServer : IWireMockServer
     {
         if (settings.AllowBodyForAllHttpMethods == true)
         {
-            _options.AllowBodyForAllHttpMethods = _settings.AllowBodyForAllHttpMethods;
             _settings.Logger.Info("AllowBodyForAllHttpMethods is set to True");
         }
 
         if (settings.AllowOnlyDefinedHttpStatusCodeInResponse == true)
         {
-            _options.AllowOnlyDefinedHttpStatusCodeInResponse = _settings.AllowOnlyDefinedHttpStatusCodeInResponse;
             _settings.Logger.Info("AllowOnlyDefinedHttpStatusCodeInResponse is set to True");
         }
 

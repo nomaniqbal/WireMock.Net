@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using Newtonsoft.Json;
 using System;
 using WireMock.Admin.Requests;
@@ -15,7 +17,14 @@ public class WireMockConsoleLogger : IWireMockLogger
     /// </summary>
     public WireMockConsoleLogger()
     {
-        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        try
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+        }
+        catch
+        {
+            // Ignored
+        }
     }
 
     /// <see cref="IWireMockLogger.Debug"/>

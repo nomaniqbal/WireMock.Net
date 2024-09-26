@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Linq;
 using System.Net;
@@ -117,7 +119,7 @@ public class WireMockServerProxyTests
         }
 
         // Assert
-        server.Mappings.Should().HaveCount(32);
+        server.Mappings.Should().HaveCount(36);
     }
 
     [Fact]
@@ -174,7 +176,7 @@ public class WireMockServerProxyTests
         server.Mappings.Should().HaveCount(2);
 
         // Verify
-        fileSystemHandlerMock.Verify(f => f.WriteMappingFile($"m{System.IO.Path.DirectorySeparatorChar}{title}.json", It.IsRegex(stringBody)), Times.Once);
+        fileSystemHandlerMock.Verify(f => f.WriteMappingFile($"m{System.IO.Path.DirectorySeparatorChar}Proxy Mapping for _{title}.json", It.IsRegex(stringBody)), Times.Once);
     }
 
     [Fact]
@@ -571,6 +573,52 @@ public class WireMockServerProxyTests
     }
 
     [Fact]
+    public async Task WireMockServer_Proxy_Should_replace_old_path_value_with_new_path_value_in_replace_settings()
+    {
+        // Assign
+        var replaceSettings = new ProxyUrlReplaceSettings
+        {
+            OldValue = "value-to-replace",
+            NewValue = "new-value"
+        };
+        string path = $"/prx_{Guid.NewGuid()}";
+        var serverForProxyForwarding = WireMockServer.Start();
+        serverForProxyForwarding
+            .Given(Request.Create().WithPath($"/{replaceSettings.NewValue}{path}"))
+            .RespondWith(Response.Create());
+
+        var settings = new WireMockServerSettings
+        {
+            ProxyAndRecordSettings = new ProxyAndRecordSettings
+            {
+                Url = serverForProxyForwarding.Urls[0],
+                SaveMapping = true,
+                SaveMappingToFile = false,
+                ReplaceSettings = replaceSettings
+            }
+        };
+        var server = WireMockServer.Start(settings);
+        var defaultMapping = server.Mappings.First();
+
+        // Act
+        var requestMessage = new HttpRequestMessage
+        {
+            Method = HttpMethod.Post,
+            RequestUri = new Uri($"{server.Urls[0]}/{replaceSettings.OldValue}{path}"),
+            Content = new StringContent("stringContent")
+        };
+
+        var handler = new HttpClientHandler();
+        await new HttpClient(handler).SendAsync(requestMessage).ConfigureAwait(false);
+
+        // Assert
+        var mapping = serverForProxyForwarding.Mappings.FirstOrDefault(m => m.Guid != defaultMapping.Guid);
+        var score = mapping.RequestMatcher.GetMatchingScore(serverForProxyForwarding.LogEntries.First().RequestMessage,
+            new RequestMatchResult());
+        Check.That(score).IsEqualTo(1.0);
+    }
+
+    [Fact]
     public async Task WireMockServer_Proxy_Should_preserve_content_header_in_proxied_request_with_empty_content()
     {
         // Assign
@@ -701,7 +749,7 @@ public class WireMockServerProxyTests
     /// <summary>
     /// Send some binary content in a request through the proxy and check that the same content
     /// arrived at the target. As example a JPEG/JIFF header is used, which is not representable
-    /// in UTF8 and breaks if it is not treated as binary content. 
+    /// in UTF8 and breaks if it is not treated as binary content.
     /// </summary>
     [Fact]
     public async Task WireMockServer_Proxy_Should_preserve_binary_request_content()
@@ -875,5 +923,50 @@ public class WireMockServerProxyTests
 
         server.LogEntries.Should().HaveCount(1);
         server.Stop();
+    }
+
+    [Fact]
+    public async Task WireMockServer_ProxyAndRecordSettings_SameRequest_ShouldProxyAll()
+    {
+        //Arrange
+        var wireMockServerSettings = new WireMockServerSettings
+        {
+            Urls = new[] { "http://localhost:19091" },
+            ProxyAndRecordSettings = new ProxyAndRecordSettings
+            {
+                Url = "http://postman-echo.com",
+                SaveMapping = true,
+                ProxyAll = true,
+                SaveMappingToFile = false,
+                ExcludedHeaders = new[] { "Postman-Token" },
+                ExcludedCookies = new[] { "sails.sid" }
+            }
+        };
+
+        var server = WireMockServer.Start(wireMockServerSettings);
+
+        var requestBody = "{\"key1\": \"value1\", \"key2\": \"value2\"}";
+        var request = new HttpRequestMessage
+        {
+            Method = HttpMethod.Post,
+            RequestUri = new Uri("http://localhost:19091/post"),
+            Content = new StringContent(requestBody)
+        };
+        var request2 = new HttpRequestMessage
+        {
+            Method = HttpMethod.Post,
+            RequestUri = new Uri("http://localhost:19091/post"),
+            Content = new StringContent(requestBody)
+        };
+        server.ResetMappings();
+
+        //Act
+        await new HttpClient().SendAsync(request);
+        await new HttpClient().SendAsync(request2);
+
+        //Assert
+        Check.That(server.Mappings.Count()).IsEqualTo(3);
+
+        server.Dispose();
     }
 }

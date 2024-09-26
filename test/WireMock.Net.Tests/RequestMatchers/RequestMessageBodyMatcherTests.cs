@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.IO;
 using System.Linq;
@@ -298,6 +300,31 @@ public class RequestMessageBodyMatcherTests
 
         // Assert
         Check.That(score).IsEqualTo(1.0d);
+    }
+
+    [Fact]
+    public void RequestMessageBodyMatcher_GetMatchingScore_BodyAsJson_JmesPathMatchers()
+    {
+        // Arrange
+        var body = new BodyData
+        {
+            BodyAsJson = new { requestId = "1", value = "A" },
+            DetectedBodyType = BodyType.Json
+        };
+
+        var requestMessage = new RequestMessage(new UrlDetails("http://localhost"), "GET", "127.0.0.1", body);
+
+        var jmesMatcher1 = new JmesPathMatcher("requestId == '1'");
+        var jmesMatcher2 = new JmesPathMatcher("value == 'A'");
+
+        var bodyMatcher = new RequestMessageBodyMatcher(MatchOperator.And, jmesMatcher1, jmesMatcher2);
+
+        // Act
+        var result = new RequestMatchResult();
+        double score = bodyMatcher.GetMatchingScore(requestMessage, result);
+
+        // Assert
+        score.Should().Be(MatchScores.Perfect);
     }
 
     [Theory]

@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System.Threading.Tasks;
 using System.Xml;
 using NFluent;
@@ -34,7 +36,7 @@ public class ResponseWithHandlebarsXPathTests
     }
 
     [Fact]
-    public async Task Response_ProvideResponse_Handlebars_XPath_SelectSingleNode_Request_BodyAsString()
+    public async Task Response_ProvideResponse_Handlebars_XPath_SelectNode_Request_BodyAsString()
     {
         // Assign
         var body = new BodyData
@@ -51,21 +53,18 @@ public class ResponseWithHandlebarsXPathTests
 
         var responseBuilder = Response.Create()
             .WithHeader("Content-Type", "application/xml")
-            .WithBody("<response>{{XPath.SelectSingleNode request.body \"/todo-list/todo-item[1]\"}}</response>")
+            .WithBody("<response>{{XPath.SelectNode request.body \"/todo-list/todo-item[1]/text()\"}}</response>")
             .WithTransformer();
 
         // Act
         var response = await responseBuilder.ProvideResponseAsync(_mappingMock.Object, request, _settings).ConfigureAwait(false);
 
         // Assert
-        var nav = new XmlDocument { InnerXml = response.Message.BodyData.BodyAsString }.CreateNavigator();
-        var node = nav.XPath2SelectSingleNode("/response/todo-item");
-        Check.That(node.Value).Equals("abc");
-        Check.That(node.GetAttribute("id", "")).Equals("a1");
+        response.Message.BodyData!.BodyAsString.Should().Be("<response>abc</response>");
     }
 
     [Fact]
-    public async Task Response_ProvideResponse_Handlebars_XPath_SelectSingleNode_Text_Request_BodyAsString()
+    public async Task Response_ProvideResponse_Handlebars_XPath_SelectNode_Text_Request_BodyAsString()
     {
         // Assign
         var body = new BodyData
@@ -82,7 +81,7 @@ public class ResponseWithHandlebarsXPathTests
 
         var responseBuilder = Response.Create()
             .WithHeader("Content-Type", "application/xml")
-            .WithBody("{{XPath.SelectSingleNode request.body \"/todo-list/todo-item[1]/text()\"}}")
+            .WithBody("{{XPath.SelectNode request.body \"/todo-list/todo-item[1]/text()\"}}")
             .WithTransformer();
 
         // Act
@@ -117,13 +116,11 @@ public class ResponseWithHandlebarsXPathTests
         var response = await responseBuilder.ProvideResponseAsync(_mappingMock.Object, request, _settings).ConfigureAwait(false);
 
         // Assert
-        var nav = new XmlDocument { InnerXml = response.Message.BodyData.BodyAsString }.CreateNavigator();
-        var nodes = nav.XPath2SelectNodes("/response/todo-item");
-        Check.That(nodes.Count + 1).IsEqualTo(3);
+        response.Message.BodyData!.BodyAsString.Should().Be("<response>abc,def,xyz</response>");
     }
 
     [Fact]
-    public async Task Response_ProvideResponse_Handlebars_XPath_SelectSingleNode_Request_SoapXML_BodyAsString()
+    public async Task Response_ProvideResponse_Handlebars_XPath_SelectNode_Request_SoapXML_BodyAsString()
     {
         // Assign
         string soap = @"
@@ -168,14 +165,14 @@ public class ResponseWithHandlebarsXPathTests
 
         var responseBuilder = Response.Create()
             .WithHeader("Content-Type", "application/xml")
-            .WithBody("<response>{{XPath.SelectSingleNode request.body \"//*[local-name()='TokenIdLijst']\"}}</response>")
+            .WithBody("<response>{{XPath.SelectNode request.body \"//*[local-name()='TokenId']/text()\"}}</response>")
             .WithTransformer();
 
         // Act
         var response = await responseBuilder.ProvideResponseAsync(_mappingMock.Object, request, _settings).ConfigureAwait(false);
 
         // Assert
-        response.Message.BodyData.BodyAsString.Should().Contain("TokenIdLijst").And.Contain("0000083256").And.Contain("0000083259");
+        response.Message.BodyData!.BodyAsString.Should().Be("<response>0000083256</response>");
     }
 
     [Fact]

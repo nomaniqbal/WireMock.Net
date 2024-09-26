@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -24,21 +26,15 @@ namespace WireMock.Owin
 #if !USE_ASPNETCORE
         public GlobalExceptionMiddleware(Next next, IWireMockMiddlewareOptions options, IOwinResponseMapper responseMapper) : base(next)
         {
-            Guard.NotNull(options, nameof(options));
-            Guard.NotNull(responseMapper, nameof(responseMapper));
-
-            _options = options;
-            _responseMapper = responseMapper;
+            _options = Guard.NotNull(options);
+            _responseMapper = Guard.NotNull(responseMapper);;
         }
 #else
         public GlobalExceptionMiddleware(Next next, IWireMockMiddlewareOptions options, IOwinResponseMapper responseMapper)
         {
-            Guard.NotNull(options, nameof(options));
-            Guard.NotNull(responseMapper, nameof(responseMapper));
-
             Next = next;
-            _options = options;
-            _responseMapper = responseMapper;
+            _options = Guard.NotNull(options);
+            _responseMapper = Guard.NotNull(responseMapper);
         }
 #endif
 
@@ -67,7 +63,7 @@ namespace WireMock.Owin
             catch (Exception ex)
             {
                 _options.Logger.Error("HttpStatusCode set to 500 {0}", ex);
-                await _responseMapper.MapAsync(ResponseMessageBuilder.Create(JsonConvert.SerializeObject(ex), 500), ctx.Response).ConfigureAwait(false);
+                await _responseMapper.MapAsync(ResponseMessageBuilder.Create(500, JsonConvert.SerializeObject(ex)), ctx.Response).ConfigureAwait(false);
             }
         }
     }

@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,7 +10,6 @@ using WireMock.Admin.Mappings;
 using WireMock.Extensions;
 using WireMock.Matchers;
 using WireMock.Models;
-using WireMock.Plugin;
 using WireMock.Settings;
 using WireMock.Util;
 
@@ -25,30 +26,25 @@ internal class MatcherMapper
 
     public IMatcher[]? Map(IEnumerable<MatcherModel>? matchers)
     {
-        if (matchers == null)
-        {
-            return null;
-        }
-        return matchers.Select(Map).Where(m => m != null).ToArray()!;
+        return matchers?.Select(Map).OfType<IMatcher>().ToArray();
     }
 
-    public IMatcher? Map(MatcherModel? matcher)
+    public IMatcher? Map(MatcherModel? matcherModel)
     {
-        if (matcher == null)
+        if (matcherModel == null)
         {
             return null;
         }
 
-        string[] parts = matcher.Name.Split('.');
+        string[] parts = matcherModel.Name.Split('.');
         string matcherName = parts[0];
         string? matcherType = parts.Length > 1 ? parts[1] : null;
-        var stringPatterns = ParseStringPatterns(matcher);
-        var matchBehaviour = matcher.RejectOnMatch == true ? MatchBehaviour.RejectOnMatch : MatchBehaviour.AcceptOnMatch;
-        var matchOperator = StringUtils.ParseMatchOperator(matcher.MatchOperator);
-        bool ignoreCase = matcher.IgnoreCase == true;
-        bool throwExceptionWhenMatcherFails = _settings.ThrowExceptionWhenMatcherFails == true;
+        var stringPatterns = ParseStringPatterns(matcherModel);
+        var matchBehaviour = matcherModel.RejectOnMatch == true ? MatchBehaviour.RejectOnMatch : MatchBehaviour.AcceptOnMatch;
+        var matchOperator = StringUtils.ParseMatchOperator(matcherModel.MatchOperator);
+        bool ignoreCase = matcherModel.IgnoreCase == true;
         bool useRegexExtended = _settings.UseRegexExtended == true;
-        bool useRegex = matcher.Regex == true;
+        bool useRegex = matcherModel.Regex == true;
 
         switch (matcherName)
         {
@@ -58,49 +54,65 @@ internal class MatcherMapper
             case "CSharpCodeMatcher":
                 if (_settings.AllowCSharpCodeMatcher == true)
                 {
-                    return PluginLoader.Load<ICSharpCodeMatcher>(matchBehaviour, matchOperator, stringPatterns);
+                    return TypeLoader.Load<ICSharpCodeMatcher>(matchBehaviour, matchOperator, stringPatterns);
                 }
 
                 throw new NotSupportedException("It's not allowed to use the 'CSharpCodeMatcher' because WireMockServerSettings.AllowCSharpCodeMatcher is not set to 'true'.");
 
             case nameof(LinqMatcher):
-                return new LinqMatcher(matchBehaviour, throwExceptionWhenMatcherFails, matchOperator, stringPatterns);
+                return new LinqMatcher(matchBehaviour, matchOperator, stringPatterns);
 
             case nameof(ExactMatcher):
-                return new ExactMatcher(matchBehaviour, ignoreCase, throwExceptionWhenMatcherFails, matchOperator, stringPatterns);
+                return new ExactMatcher(matchBehaviour, ignoreCase, matchOperator, stringPatterns);
 
             case nameof(ExactObjectMatcher):
-                return CreateExactObjectMatcher(matchBehaviour, stringPatterns[0], throwExceptionWhenMatcherFails);
+                return CreateExactObjectMatcher(matchBehaviour, stringPatterns[0]);
+#if GRAPHQL
+            case nameof(GraphQLMatcher):
+                return new GraphQLMatcher(stringPatterns[0].GetPattern(), matcherModel.CustomScalars, matchBehaviour, matchOperator);
+#endif
 
+#if MIMEKIT
+            case nameof(MimePartMatcher):
+                return CreateMimePartMatcher(matchBehaviour, matcherModel);
+#endif
+
+#if PROTOBUF
+            case nameof(ProtoBufMatcher):
+                return CreateProtoBufMatcher(matchBehaviour, stringPatterns[0].GetPattern(), matcherModel);
+#endif
             case nameof(RegexMatcher):
-                return new RegexMatcher(matchBehaviour, stringPatterns, ignoreCase, throwExceptionWhenMatcherFails, useRegexExtended, matchOperator);
+                return new RegexMatcher(matchBehaviour, stringPatterns, ignoreCase, useRegexExtended, matchOperator);
 
             case nameof(JsonMatcher):
-                var valueForJsonMatcher = matcher.Pattern ?? matcher.Patterns;
-                return new JsonMatcher(matchBehaviour, valueForJsonMatcher!, ignoreCase, throwExceptionWhenMatcherFails);
+                var valueForJsonMatcher = matcherModel.Pattern ?? matcherModel.Patterns;
+                return new JsonMatcher(matchBehaviour, valueForJsonMatcher!, ignoreCase, useRegex);
 
             case nameof(JsonPartialMatcher):
-                var valueForJsonPartialMatcher = matcher.Pattern ?? matcher.Patterns;
-                return new JsonPartialMatcher(matchBehaviour, valueForJsonPartialMatcher!, ignoreCase, throwExceptionWhenMatcherFails, useRegex);
+                var valueForJsonPartialMatcher = matcherModel.Pattern ?? matcherModel.Patterns;
+                return new JsonPartialMatcher(matchBehaviour, valueForJsonPartialMatcher!, ignoreCase, useRegex);
 
             case nameof(JsonPartialWildcardMatcher):
-                var valueForJsonPartialWildcardMatcher = matcher.Pattern ?? matcher.Patterns;
-                return new JsonPartialWildcardMatcher(matchBehaviour, valueForJsonPartialWildcardMatcher!, ignoreCase, throwExceptionWhenMatcherFails, useRegex);
+                var valueForJsonPartialWildcardMatcher = matcherModel.Pattern ?? matcherModel.Patterns;
+                return new JsonPartialWildcardMatcher(matchBehaviour, valueForJsonPartialWildcardMatcher!, ignoreCase, useRegex);
 
             case nameof(JsonPathMatcher):
-                return new JsonPathMatcher(matchBehaviour, throwExceptionWhenMatcherFails, matchOperator, stringPatterns);
+                return new JsonPathMatcher(matchBehaviour, matchOperator, stringPatterns);
 
             case nameof(JmesPathMatcher):
-                return new JmesPathMatcher(matchBehaviour, throwExceptionWhenMatcherFails, matchOperator, stringPatterns);
+                return new JmesPathMatcher(matchBehaviour, matchOperator, stringPatterns);
 
             case nameof(XPathMatcher):
-                return new XPathMatcher(matchBehaviour, throwExceptionWhenMatcherFails, matchOperator, stringPatterns);
+                return new XPathMatcher(matchBehaviour, matchOperator, matcherModel.XmlNamespaceMap, stringPatterns);
 
             case nameof(WildcardMatcher):
-                return new WildcardMatcher(matchBehaviour, stringPatterns, ignoreCase, throwExceptionWhenMatcherFails, matchOperator);
+                return new WildcardMatcher(matchBehaviour, stringPatterns, ignoreCase, matchOperator);
 
             case nameof(ContentTypeMatcher):
-                return new ContentTypeMatcher(matchBehaviour, stringPatterns, ignoreCase, throwExceptionWhenMatcherFails);
+                return new ContentTypeMatcher(matchBehaviour, stringPatterns, ignoreCase);
+
+            case nameof(FormUrlEncodedMatcher):
+                return new FormUrlEncodedMatcher(matchBehaviour, stringPatterns, ignoreCase);
 
             case nameof(SimMetricsMatcher):
                 SimMetricType type = SimMetricType.Levenstein;
@@ -109,29 +121,24 @@ internal class MatcherMapper
                     throw new NotSupportedException($"Matcher '{matcherName}' with Type '{matcherType}' is not supported.");
                 }
 
-                return new SimMetricsMatcher(matchBehaviour, stringPatterns, type, throwExceptionWhenMatcherFails);
+                return new SimMetricsMatcher(matchBehaviour, stringPatterns, type);
 
             default:
                 if (_settings.CustomMatcherMappings != null && _settings.CustomMatcherMappings.ContainsKey(matcherName))
                 {
-                    return _settings.CustomMatcherMappings[matcherName](matcher);
+                    return _settings.CustomMatcherMappings[matcherName](matcherModel);
                 }
 
                 throw new NotSupportedException($"Matcher '{matcherName}' is not supported.");
         }
     }
 
-    public MatcherModel[]? Map(IEnumerable<IMatcher>? matchers)
+    public MatcherModel[]? Map(IEnumerable<IMatcher>? matchers, Action<MatcherModel>? afterMap = null)
     {
-        if (matchers == null)
-        {
-            return null;
-        }
-
-        return matchers.Where(m => m != null).Select(Map).ToArray()!;
+        return matchers?.Select(m => Map(m, afterMap)).OfType<MatcherModel>().ToArray();
     }
 
-    public MatcherModel? Map(IMatcher? matcher)
+    public MatcherModel? Map(IMatcher? matcher, Action<MatcherModel>? afterMap = null)
     {
         if (matcher == null)
         {
@@ -150,13 +157,18 @@ internal class MatcherMapper
 
         switch (matcher)
         {
-            case JsonPartialMatcher jsonPartialMatcher:
-                model.Regex = jsonPartialMatcher.Regex;
+            case JsonMatcher jsonMatcher:
+                model.Regex = jsonMatcher.Regex;
                 break;
 
-            case JsonPartialWildcardMatcher jsonPartialWildcardMatcher:
-                model.Regex = jsonPartialWildcardMatcher.Regex;
+            case XPathMatcher xpathMatcher:
+                model.XmlNamespaceMap = xpathMatcher.XmlNamespaceMap;
                 break;
+#if GRAPHQL
+            case GraphQLMatcher graphQLMatcher:
+                model.CustomScalars = graphQLMatcher.CustomScalars;
+                break;
+#endif
         }
 
         switch (matcher)
@@ -183,16 +195,30 @@ internal class MatcherMapper
                 }
                 break;
 
-            // If the matcher is a IValueMatcher, get the value (can be string or object).
-            case IValueMatcher valueMatcher:
-                model.Pattern = valueMatcher.Value;
+            // If the matcher is a IObjectMatcher, get the value (can be string or object or byte[]).
+            case IObjectMatcher objectMatcher:
+                model.Pattern = objectMatcher.Value;
                 break;
 
-            // If the matcher is a ExactObjectMatcher, get the ValueAsObject or ValueAsBytes.
-            case ExactObjectMatcher exactObjectMatcher:
-                model.Pattern = exactObjectMatcher.ValueAsObject ?? exactObjectMatcher.ValueAsBytes;
+#if MIMEKIT
+            case MimePartMatcher mimePartMatcher:
+                model.ContentDispositionMatcher = Map(mimePartMatcher.ContentDispositionMatcher);
+                model.ContentMatcher = Map(mimePartMatcher.ContentMatcher);
+                model.ContentTransferEncodingMatcher = Map(mimePartMatcher.ContentTransferEncodingMatcher);
+                model.ContentTypeMatcher = Map(mimePartMatcher.ContentTypeMatcher);
                 break;
+#endif
+
+#if PROTOBUF
+            case ProtoBufMatcher protoBufMatcher:
+                model.Pattern = protoBufMatcher.ProtoDefinition().Value;
+                model.ProtoBufMessageType = protoBufMatcher.MessageType;
+                model.ContentMatcher = Map(protoBufMatcher.Matcher);
+                break;
+#endif
         }
+
+        afterMap?.Invoke(model);
 
         return model;
     }
@@ -201,7 +227,7 @@ internal class MatcherMapper
     {
         if (matcher.Pattern is string patternAsString)
         {
-            return new[] { new AnyOf<string, StringPattern>(patternAsString) };
+            return [new AnyOf<string, StringPattern>(patternAsString)];
         }
 
         if (matcher.Pattern is IEnumerable<string> patternAsStringArray)
@@ -218,13 +244,13 @@ internal class MatcherMapper
         {
             var patternAsFile = matcher.PatternAsFile!;
             var pattern = _settings.FileSystemHandler.ReadFileAsString(patternAsFile);
-            return new[] { new AnyOf<string, StringPattern>(new StringPattern { Pattern = pattern, PatternAsFile = patternAsFile }) };
+            return [new AnyOf<string, StringPattern>(new StringPattern { Pattern = pattern, PatternAsFile = patternAsFile })];
         }
 
-        return new AnyOf<string, StringPattern>[0];
+        return EmptyArray<AnyOf<string, StringPattern>>.Value;
     }
 
-    private static ExactObjectMatcher CreateExactObjectMatcher(MatchBehaviour matchBehaviour, AnyOf<string, StringPattern> stringPattern, bool throwException)
+    private static ExactObjectMatcher CreateExactObjectMatcher(MatchBehaviour matchBehaviour, AnyOf<string, StringPattern> stringPattern)
     {
         byte[] bytePattern;
         try
@@ -236,6 +262,42 @@ internal class MatcherMapper
             throw new ArgumentException($"Matcher 'ExactObjectMatcher' has invalid pattern. The pattern value '{stringPattern}' is not a Base64String.", nameof(stringPattern));
         }
 
-        return new ExactObjectMatcher(matchBehaviour, bytePattern, throwException);
+        return new ExactObjectMatcher(matchBehaviour, bytePattern);
     }
+
+#if MIMEKIT
+    private MimePartMatcher CreateMimePartMatcher(MatchBehaviour matchBehaviour, MatcherModel matcher)
+    {
+        var contentTypeMatcher = Map(matcher?.ContentTypeMatcher) as IStringMatcher;
+        var contentDispositionMatcher = Map(matcher?.ContentDispositionMatcher) as IStringMatcher;
+        var contentTransferEncodingMatcher = Map(matcher?.ContentTransferEncodingMatcher) as IStringMatcher;
+        var contentMatcher = Map(matcher?.ContentMatcher);
+
+        return new MimePartMatcher(matchBehaviour, contentTypeMatcher, contentDispositionMatcher, contentTransferEncodingMatcher, contentMatcher);
+    }
+#endif
+
+#if PROTOBUF
+    private ProtoBufMatcher CreateProtoBufMatcher(MatchBehaviour? matchBehaviour, string protoDefinitionOrId, MatcherModel matcher)
+    {
+        var objectMatcher = Map(matcher.ContentMatcher) as IObjectMatcher;
+
+        IdOrText protoDefinition;
+        if (_settings.ProtoDefinitions?.TryGetValue(protoDefinitionOrId, out var protoDefinitionFromSettings) == true)
+        {
+            protoDefinition = new(protoDefinitionOrId, protoDefinitionFromSettings);
+        }
+        else
+        {
+            protoDefinition = new(null, protoDefinitionOrId);
+        }
+
+        return new ProtoBufMatcher(
+            () => protoDefinition,
+            matcher!.ProtoBufMessageType!,
+            matchBehaviour ?? MatchBehaviour.AcceptOnMatch,
+            objectMatcher
+        );
+    }
+#endif
 }

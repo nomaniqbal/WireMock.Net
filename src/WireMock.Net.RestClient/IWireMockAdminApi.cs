@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.Net.Http.Headers;
@@ -25,11 +27,23 @@ public interface IWireMockAdminApi
     AuthenticationHeaderValue Authorization { get; set; }
 
     /// <summary>
+    /// Get health status.
+    /// </summary>
+    /// <param name="cancellationToken">The optional cancellationToken.</param>
+    /// <returns>
+    /// Returns HttpStatusCode <c>200</c> with a value <c>Healthy</c> to indicate that WireMock.Net is healthy.
+    /// Else it returns HttpStatusCode <c>404</c>.
+    /// </returns>
+    [Get("health")]
+    [AllowAnyStatusCode]
+    Task<string> GetHealthAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Get the settings.
     /// </summary>
     /// <returns>SettingsModel</returns>
     [Get("settings")]
-    Task<SettingsModel> GetSettingsAsync();
+    Task<SettingsModel> GetSettingsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Update the settings.
@@ -178,7 +192,7 @@ public interface IWireMockAdminApi
     /// Get a request based on the guid
     /// </summary>
     /// <param name="guid">The Guid</param>
-    /// <returns>MappingModel</returns>
+    /// <returns>LogEntryModel</returns>
     /// <param name="cancellationToken">The optional cancellationToken.</param>
     [Get("requests/{guid}")]
     Task<LogEntryModel> GetRequestAsync([Path] Guid guid, CancellationToken cancellationToken = default);
@@ -192,13 +206,21 @@ public interface IWireMockAdminApi
     Task<StatusModel> DeleteRequestAsync([Path] Guid guid, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Find a request based on the criteria
+    /// Find requests based on the criteria (<see cref="RequestModel"/>)
     /// </summary>
     /// <param name="model">The RequestModel</param>
     /// <param name="cancellationToken">The optional cancellationToken.</param>
     [Post("requests/find")]
     [Header("Content-Type", "application/json")]
     Task<IList<LogEntryModel>> FindRequestsAsync([Body] RequestModel model, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Find requests based on the Mapping Guid.
+    /// </summary>
+    /// <param name="mappingGuid">The Mapping Guid</param>
+    /// <param name="cancellationToken">The optional cancellationToken.</param>
+    [Get("requests/find")]
+    Task<IList<LogEntryModel>> FindRequestsByMappingGuidAsync([Query] Guid mappingGuid, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get all scenarios
@@ -280,4 +302,20 @@ public interface IWireMockAdminApi
     /// <param name="cancellationToken">The optional cancellationToken.</param>
     [Head("files/{filename}")]
     Task FileExistsAsync([Path] string filename, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Convert an OpenApi / RAML document to mappings.
+    /// </summary>
+    /// <param name="text">The OpenApi or RAML document as text.</param>
+    /// <param name="cancellationToken">The optional cancellationToken.</param>
+    [Post("openapi/convert")]
+    Task<IReadOnlyList<MappingModel>> OpenApiConvertAsync([Body] string text, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Convert an OpenApi / RAML document to mappings and save these.
+    /// </summary>
+    /// <param name="text">The OpenApi or RAML document as text.</param>
+    /// <param name="cancellationToken">The optional cancellationToken.</param>
+    [Post("openapi/save")]
+    Task<StatusModel> OpenApiSaveAsync([Body] string text, CancellationToken cancellationToken = default);
 }

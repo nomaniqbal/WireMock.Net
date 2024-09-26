@@ -1,4 +1,6 @@
-﻿using WireMock.Logging;
+// Copyright © WireMock.Net
+
+using WireMock.Logging;
 using WireMock.Server;
 using WireMock.Settings;
 
@@ -24,7 +26,6 @@ namespace WireMock.Net.Console.NETCoreApp3WithCertificate
                     // X509CertificateFilePath = "example.pfx",
                     // X509CertificatePassword = "wiremock"
                 }
-
             });
             System.Console.WriteLine("WireMockServer listening at {0}", string.Join(",", server.Urls));
 

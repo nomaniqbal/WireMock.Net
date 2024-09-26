@@ -1,4 +1,7 @@
+// Copyright © WireMock.Net
+
 using System.Collections.Generic;
+using WireMock.Admin.Settings;
 
 namespace WireMock.Admin.Mappings;
 
@@ -34,7 +37,7 @@ public class ResponseModel
     public bool? BodyAsJsonIndented { get; set; }
 
     /// <summary>
-    /// Gets or sets the body (as bytearray).
+    /// Gets or sets the body (as byte array).
     /// </summary>
     public byte[]? BodyAsBytes { get; set; }
 
@@ -84,6 +87,11 @@ public class ResponseModel
     public string? HeadersRaw { get; set; }
 
     /// <summary>
+    /// Gets or sets the Trailing Headers.
+    /// </summary>
+    public IDictionary<string, object>? TrailingHeaders { get; set; }
+
+    /// <summary>
     /// Gets or sets the delay in milliseconds.
     /// </summary>
     public int? Delay { get; set; }
@@ -104,6 +112,11 @@ public class ResponseModel
     public string? ProxyUrl { get; set; }
 
     /// <summary>
+    /// Defines the Proxy Url Replace Settings.
+    /// </summary>
+    public ProxyUrlReplaceSettingsModel? ProxyUrlReplaceSettings { get; set; }
+
+    /// <summary>
     /// The client X509Certificate2 Thumbprint or SubjectName to use.
     /// </summary>
     public string? X509Certificate2ThumbprintOrSubjectName { get; set; }
@@ -117,4 +130,16 @@ public class ResponseModel
     /// Gets or sets the WebProxy settings.
     /// </summary>
     public WebProxyModel? WebProxy { get; set; }
+
+    #region ProtoBuf
+    /// <summary>
+    /// Gets or sets the proto definition.
+    /// </summary>
+    public string? ProtoDefinition { get; set; }
+
+    /// <summary>
+    /// Gets or sets the full type of the protobuf (request/response) message object. Format is "{package-name}.{type-name}".
+    /// </summary>
+    public string? ProtoBufMessageType { get; set; }
+    #endregion
 }

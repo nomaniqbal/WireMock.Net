@@ -1,11 +1,12 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using HandlebarsDotNet.Helpers.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Stef.Validation;
-using WireMock.ResponseBuilders;
 using WireMock.Settings;
 using WireMock.Types;
 using WireMock.Util;
@@ -14,8 +15,6 @@ namespace WireMock.Transformers;
 
 internal class Transformer : ITransformer
 {
-    private static readonly Type[] SupportedTypes = { typeof(bool), typeof(long), typeof(int), typeof(double), typeof(Guid), typeof(DateTime), typeof(TimeSpan), typeof(Uri) };
-
     private readonly JsonSerializer _jsonSerializer;
     private readonly ITransformerContextFactory _factory;
 
@@ -95,17 +94,14 @@ internal class Transformer : ITransformer
         responseMessage.FaultPercentage = original.FaultPercentage;
 
         responseMessage.Headers = TransformHeaders(transformerContext, model, original.Headers);
+        responseMessage.TrailingHeaders = TransformHeaders(transformerContext, model, original.TrailingHeaders);
 
-        switch (original.StatusCode)
+        responseMessage.StatusCode = original.StatusCode switch
         {
-            case int statusCodeAsInteger:
-                responseMessage.StatusCode = statusCodeAsInteger;
-                break;
-
-            case string statusCodeAsString:
-                responseMessage.StatusCode = transformerContext.ParseAndRender(statusCodeAsString, model);
-                break;
-        }
+            int statusCodeAsInteger => statusCodeAsInteger,
+            string statusCodeAsString => transformerContext.ParseAndRender(statusCodeAsString, model),
+            _ => responseMessage.StatusCode
+        };
 
         return responseMessage;
     }
@@ -126,13 +122,13 @@ internal class Transformer : ITransformer
         switch (original.DetectedBodyType)
         {
             case BodyType.Json:
+            case BodyType.ProtoBuf:
                 return TransformBodyAsJson(transformerContext, options, model, original);
 
             case BodyType.File:
                 return TransformBodyAsFile(transformerContext, model, original, useTransformerForBodyAsFile);
 
-            case BodyType.String:
-            case BodyType.FormUrlEncoded:
+            case BodyType.String or BodyType.FormUrlEncoded:
                 return TransformBodyAsString(transformerContext, model, original);
 
             default:
@@ -194,6 +190,8 @@ internal class Transformer : ITransformer
             Encoding = original.Encoding,
             DetectedBodyType = original.DetectedBodyType,
             DetectedBodyTypeFromContentType = original.DetectedBodyTypeFromContentType,
+            ProtoDefinition = original.ProtoDefinition,
+            ProtoBufMessageType = original.ProtoBufMessageType,
             BodyAsJson = jToken
         };
     }
@@ -250,7 +248,7 @@ internal class Transformer : ITransformer
                     return;
                 }
 
-                var transformed = transformerContext.ParseAndEvaluate(stringValue, model);
+                var transformed = transformerContext.ParseAndEvaluate(stringValue!, model);
                 if (!Equals(stringValue, transformed))
                 {
                     ReplaceNodeValue(options, node, transformed);
@@ -269,9 +267,10 @@ internal class Transformer : ITransformer
                 return;
 
             case string transformedString:
-                if (TryConvert(transformedString, out var convertedFromStringValue))
+                var (isConvertedFromString, convertedValueFromString) = TryConvert(options, transformedString);
+                if (isConvertedFromString)
                 {
-                    node.Replace(JToken.FromObject(convertedFromStringValue, _jsonSerializer));
+                    node.Replace(JToken.FromObject(convertedValueFromString, _jsonSerializer));
                 }
                 else
                 {
@@ -293,7 +292,8 @@ internal class Transformer : ITransformer
                 break;
 
             case { }:
-                if (TryConvert(transformedValue, out var convertedValue))
+                var (isConverted, convertedValue) = TryConvert(options, transformedValue);
+                if (isConverted)
                 {
                     node.Replace(JToken.FromObject(convertedValue, _jsonSerializer));
                 }
@@ -309,23 +309,28 @@ internal class Transformer : ITransformer
         return JsonUtils.TryParseAsJObject(stringValue, out var parsedAsjObject) ? parsedAsjObject : stringValue;
     }
 
-    private static bool TryConvert(object? transformedValue, [NotNullWhen(true)] out object? convertedValue)
+    private static (bool IsConverted, object ConvertedValue) TryConvert(ReplaceNodeOptions options, object value)
     {
-        foreach (var supportedType in SupportedTypes)
+        var valueAsString = value as string;
+
+        if (options == ReplaceNodeOptions.Evaluate)
         {
-            try
+            if (valueAsString != null && WrappedString.TryDecode(valueAsString, out var decoded))
             {
-                convertedValue = Convert.ChangeType(transformedValue, supportedType);
-                return convertedValue is not null;
+                return (true, decoded);
             }
-            catch
-            {
-                // Ignore
-            }
+
+            return (false, value);
         }
 
-        convertedValue = null;
-        return false;
+        if (valueAsString != null)
+        {
+            return WrappedString.TryDecode(valueAsString, out var decoded) ?
+                (true, decoded) :
+                StringUtils.TryConvertToKnownType(valueAsString);
+        }
+
+        return (false, value);
     }
 
     private static IBodyData TransformBodyAsString(ITransformerContext transformerContext, object model, IBodyData original)

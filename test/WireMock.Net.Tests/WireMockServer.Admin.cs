@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.IO;
 using System.Linq;
@@ -9,8 +11,11 @@ using FluentAssertions;
 using Moq;
 using Newtonsoft.Json;
 using NFluent;
+using RestEase;
+using WireMock.Client;
 using WireMock.Handlers;
 using WireMock.Logging;
+using WireMock.Matchers.Request;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 using WireMock.Server;
@@ -22,13 +27,9 @@ namespace WireMock.Net.Tests;
 public class WireMockServerAdminTests
 {
     // For for AppVeyor + OpenCover
-    private string GetCurrentFolder()
+    private static string GetCurrentFolder()
     {
-        string current = Directory.GetCurrentDirectory();
-        //if (!current.EndsWith("WireMock.Net.Tests"))
-        //    return Path.Combine(current, "test", "WireMock.Net.Tests");
-
-        return current;
+        return Directory.GetCurrentDirectory();
     }
 
     [Fact]
@@ -243,6 +244,38 @@ public class WireMockServerAdminTests
 
         // Verify
         loggerMock.Verify(l => l.Info(It.Is<string>(s => s.StartsWith("The Static Mapping folder")), It.IsAny<object[]>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task WireMockServer_Admin_Mapping_WithoutPathOrUrl()
+    {
+        // Arrange
+        using var server = WireMockServer.StartWithAdminInterface();
+
+        // Act
+        server.Given(Request.Create().UsingGet())
+            .RespondWith(Response.Create());
+
+        // Assert
+        var mapping = server.Mappings.First(m => !m.IsAdminInterface);
+        var request = (Request) mapping.RequestMatcher;
+        var pathMatcher = request.GetRequestMessageMatcher<RequestMessagePathMatcher>();
+        pathMatcher.Should().BeNull();
+
+        var api = RestClient.For<IWireMockAdminApi>(server.Url);
+        var mappingModels = await api.GetMappingsAsync();
+        var mappingModel = mappingModels.First();
+        mappingModel.Request.Path.Should().BeNull();
+        mappingModel.Request.Url.Should().BeNull();
+
+        await api.DeleteMappingsAsync();
+
+        await api.PostMappingAsync(mappingModel);
+        await api.GetMappingsAsync();
+        mappingModels = await api.GetMappingsAsync();
+        mappingModel = mappingModels.First();
+        mappingModel.Request.Path.Should().BeNull();
+        mappingModel.Request.Url.Should().BeNull();
     }
 
     [Fact]
@@ -468,9 +501,9 @@ public class WireMockServerAdminTests
 
         Check.That(server.MappingModels.Count()).Equals(3);
 
-        Guid? guid1 = server.MappingModels.ElementAt(0).Guid;
-        Guid? guid2 = server.MappingModels.ElementAt(1).Guid;
-        Guid? guid3 = server.MappingModels.ElementAt(2).Guid;
+        var guid1 = server.MappingModels.ElementAt(0).Guid;
+        var guid2 = server.MappingModels.ElementAt(1).Guid;
+        var guid3 = server.MappingModels.ElementAt(2).Guid;
 
         Check.That(guid1).IsNotNull();
         Check.That(guid2).IsNotNull();
@@ -482,7 +515,7 @@ public class WireMockServerAdminTests
                                $"]";
 
         // Act
-        var request = new HttpRequestMessage()
+        var request = new HttpRequestMessage
         {
             Method = HttpMethod.Delete,
             RequestUri = new Uri($"http://localhost:{server.Ports[0]}/__admin/mappings"),
@@ -498,5 +531,48 @@ public class WireMockServerAdminTests
         Check.That(guids.Contains(guid3.Value)).IsTrue();
         Check.That(response.StatusCode).Equals(HttpStatusCode.OK);
         Check.That(await response.Content.ReadAsStringAsync().ConfigureAwait(false)).Equals($"{{\"Status\":\"Mappings deleted. Affected GUIDs: [{guid1}, {guid2}]\"}}");
+    }
+
+    [Fact]
+    public async Task WireMockServer_CreateClient_And_CallEndpoint()
+    {
+        // Arrange
+        var server = WireMockServer.Start();
+        var client = server.CreateClient();
+
+        // Act
+        await client.GetAsync($"{server.Url}/foo").ConfigureAwait(false);
+
+        // Assert
+        Check.That(server.LogEntries).HasSize(1);
+        var requestLogged = server.LogEntries.First();
+        Check.That(requestLogged.RequestMessage.Method).IsEqualTo("GET");
+        Check.That(requestLogged.RequestMessage.BodyData).IsNull();
+
+        // Cleanup
+        server.Stop();
+        server.Dispose();
+    }
+
+    [Fact]
+    public async Task WireMockServer_CreateClient_And_CallAdminSettingsEndpoint()
+    {
+        // Arrange
+        var server = WireMockServer.Start(w =>
+        {
+            w.StartAdminInterface = true;
+            w.AdminPath = "/adm";
+        });
+        var client = server.CreateClient();
+
+        // Act
+        var settings = await client.GetStringAsync($"{server.Url}/adm/settings").ConfigureAwait(false);
+
+        // Assert
+        settings.Should().NotBeNull();
+
+        // Cleanup
+        server.Stop();
+        server.Dispose();
     }
 }

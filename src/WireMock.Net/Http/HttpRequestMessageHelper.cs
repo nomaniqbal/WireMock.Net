@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -5,12 +7,19 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using Newtonsoft.Json;
 using Stef.Validation;
+using WireMock.Constants;
 using WireMock.Types;
+using WireMock.Util;
 
 namespace WireMock.Http;
 
 internal static class HttpRequestMessageHelper
 {
+    private static readonly IDictionary<string, bool> ContentLengthHeaderAllowed = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
+    {
+        { HttpRequestMethod.HEAD, true }
+    };
+
     internal static HttpRequestMessage Create(IRequestMessage requestMessage, string url)
     {
         Guard.NotNull(requestMessage);
@@ -25,21 +34,16 @@ internal static class HttpRequestMessageHelper
             MediaTypeHeaderValue.TryParse(value, out contentType);
         }
 
-        switch (requestMessage.BodyData?.DetectedBodyType)
+        var bodyData = requestMessage.BodyData;
+        httpRequestMessage.Content = bodyData?.GetBodyType() switch
         {
-            case BodyType.Bytes:
-                httpRequestMessage.Content = ByteArrayContentHelper.Create(requestMessage.BodyData.BodyAsBytes!, contentType);
-                break;
+            BodyType.Bytes => ByteArrayContentHelper.Create(bodyData!.BodyAsBytes!, contentType),
+            BodyType.Json => StringContentHelper.Create(JsonConvert.SerializeObject(bodyData!.BodyAsJson), contentType),
+            BodyType.String => StringContentHelper.Create(bodyData!.BodyAsString!, contentType),
+            BodyType.FormUrlEncoded => StringContentHelper.Create(bodyData!.BodyAsString!, contentType),
 
-            case BodyType.Json:
-                httpRequestMessage.Content = StringContentHelper.Create(JsonConvert.SerializeObject(requestMessage.BodyData.BodyAsJson), contentType);
-                break;
-
-            case BodyType.String:
-            case BodyType.FormUrlEncoded:
-                httpRequestMessage.Content = StringContentHelper.Create(requestMessage.BodyData.BodyAsString!, contentType);
-                break;
-        }
+            _ => httpRequestMessage.Content
+        };
 
         // Overwrite the host header
         httpRequestMessage.Headers.Host = new Uri(url).Authority;
@@ -50,7 +54,19 @@ internal static class HttpRequestMessageHelper
             return httpRequestMessage;
         }
 
-        var excludeHeaders = new List<string> { HttpKnownHeaderNames.Host, HttpKnownHeaderNames.ContentLength };
+        var excludeHeaders = new List<string> { HttpKnownHeaderNames.Host };
+
+        var contentLengthHeaderAllowed = ContentLengthHeaderAllowed.TryGetValue(requestMessage.Method, out var allowed) && allowed;
+        if (contentLengthHeaderAllowed)
+        {
+            // Set Content to empty ByteArray to be able to set the Content-Length on the content in case of a HEAD method.
+            httpRequestMessage.Content ??= new ByteArrayContent(EmptyArray<byte>.Value);
+        }
+        else
+        {
+            excludeHeaders.Add(HttpKnownHeaderNames.ContentLength);
+        }
+
         if (contentType != null)
         {
             // Content-Type should be set on the content

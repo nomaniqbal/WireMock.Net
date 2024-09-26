@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 namespace WireMock.Types;
 
 /// <summary>
@@ -38,5 +40,10 @@ public enum BodyType
     /// <summary>
     /// Body is a String which is x-www-form-urlencoded.
     /// </summary>
-    FormUrlEncoded
+    FormUrlEncoded,
+
+    /// <summary>
+    /// Body is a ProtoBuf Byte array
+    /// </summary>
+    ProtoBuf
 }

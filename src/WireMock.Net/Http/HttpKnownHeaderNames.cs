@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
@@ -12,12 +14,12 @@ namespace WireMock.Http;
 /// </summary>
 internal static class HttpKnownHeaderNames
 {
-    // https://docs.microsoft.com/en-us/dotnet/api/system.net.webheadercollection.isrestricted
+    // - https://docs.microsoft.com/en-us/dotnet/api/system.net.webheadercollection.isrestricted
+    // - ContentLength is allowed per #720
     private static readonly string[] RestrictedResponseHeaders =
     {
         Accept,
         Connection,
-        ContentLength,
         ContentType,
         Date, // RFC1123Pattern
         Expect,

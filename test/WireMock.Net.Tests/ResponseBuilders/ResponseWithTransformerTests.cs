@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -500,34 +502,6 @@ public class ResponseWithTransformerTests
         JsonConvert.SerializeObject(response.Message.BodyData!.BodyAsJson).Should().Be("[{\"x\":\"test\"}]");
     }
 
-    //[Theory]
-    //[InlineData(TransformerType.Handlebars, "a")]
-    //[InlineData(TransformerType.Handlebars, "42")]
-    //[InlineData(TransformerType.Handlebars, "{")]
-    //[InlineData(TransformerType.Handlebars, "]")]
-    //[InlineData(TransformerType.Handlebars, " ")]
-    //public async Task Response_ProvideResponse_Transformer_WithBodyAsJsonWithExtraQuotes_AndSpecialOption_MakesAString_ResultAsObject(TransformerType transformerType, string text)
-    //{
-    //    string jsonString = $"{{ \"x\": \"{text}\" }}";
-    //    var bodyData = new BodyData
-    //    {
-    //        BodyAsJson = JsonConvert.DeserializeObject(jsonString),
-    //        DetectedBodyType = BodyType.Json,
-    //        Encoding = Encoding.UTF8
-    //    };
-    //    var request = new RequestMessage(new UrlDetails("http://localhost/foo_object"), "POST", ClientIp, bodyData);
-
-    //    var responseBuilder = Response.Create()
-    //        .WithBodyAsJson(new { text = "\"{{request.bodyAsJson.x}}\"" })
-    //        .WithTransformer(transformerType, false, ReplaceNodeOptions.Default);
-
-    //    // Act
-    //    var response = await responseBuilder.ProvideResponseAsync(_mappingMock.Object, request,  _settings).ConfigureAwait(false);
-
-    //    // Assert
-    //    JsonConvert.SerializeObject(response.Message.BodyData.BodyAsJson).Should().Be($"{{\"text\":\"{text}\"}}");
-    //}
-
     [Theory]
     [InlineData(TransformerType.Handlebars, "\"\"", "\"\"")]
     [InlineData(TransformerType.Handlebars, "\"a\"", "\"a\"")]
@@ -543,7 +517,7 @@ public class ResponseWithTransformerTests
     [InlineData(TransformerType.Handlebars, "2147483647", "2147483647")]
     [InlineData(TransformerType.Handlebars, "\"9223372036854775807\"", "\"9223372036854775807\"")]
     [InlineData(TransformerType.Handlebars, "9223372036854775807", "9223372036854775807")]
-    public async Task Response_ProvideResponse_Transformer_WithBodyAsJson_And_ReplaceNodeOptionsKeep(TransformerType transformerType, string value, string expected)
+    public async Task Response_ProvideResponse_Transformer_WithBodyAsJson_And_ReplaceNodeOptionsEvaluate(TransformerType transformerType, string value, string expected)
     {
         string jsonString = $"{{ \"x\": {value} }}";
         var bodyData = new BodyData
@@ -782,6 +756,59 @@ public class ResponseWithTransformerTests
         response.Message.BodyData!.BodyAsString.Should().Be(text);
         response.Message.BodyData.Encoding.Should().Be(enc);
     }
+
+#if MIMEKIT
+    [Theory]
+    [InlineData(TransformerType.Handlebars)]
+    // [InlineData(TransformerType.Scriban)]
+    // [InlineData(TransformerType.ScribanDotLiquid)]
+    public async Task Response_ProvideResponse_Transformer_WithBodyAsMimeMessage(TransformerType transformerType)
+    {
+        // Assign
+        var multiPart = @"--=-5XgmpXt0XOfzdtcgNJc2ZQ==
+Content-Type: text/plain; charset=utf-8
+
+This is some plain text
+--=-5XgmpXt0XOfzdtcgNJc2ZQ==
+Content-Type: text/json; charset=utf-8
+
+{
+        ""Key"": ""Value""
+    }
+--=-5XgmpXt0XOfzdtcgNJc2ZQ==
+Content-Type: image/png; name=image.png
+Content-Disposition: attachment; filename=image.png
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAIAAAACAgMAAAAP2OW3AAAADFBMVEX/tID/vpH/pWX/sHidUyjl
+AAAADElEQVR4XmMQYNgAAADkAMHebX3mAAAAAElFTkSuQmCC
+
+--=-5XgmpXt0XOfzdtcgNJc2ZQ==-- 
+";
+
+        var bodyData = new BodyData
+        {
+            BodyAsString = multiPart,
+            DetectedBodyType = BodyType.MultiPart
+        };
+
+        var headers = new Dictionary<string, string[]>
+        {
+            { "Content-Type", new[] { @"multipart/mixed; boundary=""=-5XgmpXt0XOfzdtcgNJc2ZQ=="""} }
+        };
+        var request = new RequestMessage(new UrlDetails("http://localhost/foo_object"), "POST", ClientIp, bodyData, headers);
+
+        var responseBuilder = Response.Create()
+            .WithBody("{{request.BodyAsMimeMessage.BodyParts.[0].ContentType.MimeType}} {{request.BodyAsMimeMessage.BodyParts.[1].ContentType.MimeType}} {{request.BodyAsMimeMessage.BodyParts.[2].FileName}}")
+            .WithTransformer(transformerType);
+
+        // Act
+        var response = await responseBuilder.ProvideResponseAsync(_mappingMock.Object, request, _settings).ConfigureAwait(false);
+
+        // Assert
+        response.Message.BodyData!.BodyAsString.Should().Be("text/plain text/json image.png");
+    }
+#endif
 
     [Theory]
     [InlineData("/wiremock-data/1", "one")]

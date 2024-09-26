@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System.Linq;
 using Stef.Validation;
 
@@ -9,21 +11,11 @@ namespace WireMock.Matchers;
 /// <seealso cref="IObjectMatcher" />
 public class ExactObjectMatcher : IObjectMatcher
 {
-    /// <summary>
-    /// Gets the value as object.
-    /// </summary>
-    public object? ValueAsObject { get; }
+    /// <inheritdoc />
+    public object Value { get; }
 
-    /// <summary>
-    /// Gets the value as byte[].
-    /// </summary>
-    public byte[]? ValueAsBytes { get; }
-
-    /// <inheritdoc cref="IMatcher.MatchBehaviour"/>
+    /// <inheritdoc />
     public MatchBehaviour MatchBehaviour { get; }
-
-    /// <inheritdoc cref="IMatcher.ThrowException"/>
-    public bool ThrowException { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ExactObjectMatcher"/> class.
@@ -40,7 +32,7 @@ public class ExactObjectMatcher : IObjectMatcher
     /// <param name="value">The value.</param>
     public ExactObjectMatcher(MatchBehaviour matchBehaviour, object value)
     {
-        ValueAsObject = Guard.NotNull(value);
+        Value = Guard.NotNull(value);
         MatchBehaviour = matchBehaviour;
     }
 
@@ -56,31 +48,35 @@ public class ExactObjectMatcher : IObjectMatcher
     /// Initializes a new instance of the <see cref="ExactObjectMatcher"/> class.
     /// </summary>
     /// <param name="matchBehaviour">The match behaviour.</param>
-    /// <param name="throwException">Throw an exception when the internal matching fails because of invalid input.</param>
     /// <param name="value">The value.</param>
-    public ExactObjectMatcher(MatchBehaviour matchBehaviour, byte[] value, bool throwException = false)
+    public ExactObjectMatcher(MatchBehaviour matchBehaviour, byte[] value)
     {
-        ValueAsBytes = Guard.NotNull(value);
+        Value = Guard.NotNull(value);
         MatchBehaviour = matchBehaviour;
-        ThrowException = throwException;
     }
 
-    /// <inheritdoc cref="IObjectMatcher.IsMatch"/>
-    public double IsMatch(object? input)
+    /// <inheritdoc />
+    public MatchResult IsMatch(object? input)
     {
-        bool equals = false;
-        if (ValueAsObject != null)
+        bool equals;
+        if (Value is byte[] valueAsBytes && input is byte[] inputAsBytes)
         {
-            equals = Equals(ValueAsObject, input);
+            equals = valueAsBytes.SequenceEqual(inputAsBytes);
         }
-        else if (input != null)
+        else
         {
-            equals = ValueAsBytes?.SequenceEqual((byte[])input) == true;
+            equals = Equals(Value, input);
         }
 
         return MatchBehaviourHelper.Convert(MatchBehaviour, MatchScores.ToScore(equals));
     }
 
-    /// <inheritdoc cref="IMatcher.Name"/>
-    public string Name => "ExactObjectMatcher";
+    /// <inheritdoc />
+    public string Name => nameof(ExactObjectMatcher);
+
+    /// <inheritdoc />
+    public string GetCSharpCodeArguments()
+    {
+        return "NotImplemented";
+    }
 }

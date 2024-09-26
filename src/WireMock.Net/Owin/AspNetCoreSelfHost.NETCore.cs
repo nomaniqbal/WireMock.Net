@@ -1,4 +1,6 @@
-#if NETCOREAPP3_1 || NET5_0 || NET6_0 || NET7_0
+// Copyright © WireMock.Net
+
+#if NETCOREAPP3_1 || NET5_0_OR_GREATER
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using WireMock.Types;

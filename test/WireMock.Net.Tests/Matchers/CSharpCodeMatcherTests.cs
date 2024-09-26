@@ -1,3 +1,6 @@
+// Copyright © WireMock.Net
+
+using FluentAssertions;
 using NFluent;
 using WireMock.Matchers;
 using Xunit;
@@ -11,12 +14,13 @@ public class CSharpCodeMatcherTests
     {
         // Assign
         string input = "x";
-
-        // Act
         var matcher = new CSharpCodeMatcher("return it == \"x\";");
 
+        // Act
+        var score = matcher.IsMatch(input).Score;
+
         // Assert
-        Check.That(matcher.IsMatch(input)).IsEqualTo(1.0d);
+        score.Should().Be(MatchScores.Perfect);
     }
 
     [Fact]
@@ -24,12 +28,13 @@ public class CSharpCodeMatcherTests
     {
         // Assign
         string input = "y";
-
-        // Act
         var matcher = new CSharpCodeMatcher("return it == \"x\";");
 
+        // Act
+        var score = matcher.IsMatch(input).Score;
+
         // Assert
-        Check.That(matcher.IsMatch(input)).IsEqualTo(0.0d);
+        score.Should().Be(MatchScores.Mismatch);
     }
 
     [Fact]
@@ -37,12 +42,13 @@ public class CSharpCodeMatcherTests
     {
         // Assign
         string input = "x";
-
-        // Act
         var matcher = new CSharpCodeMatcher(MatchBehaviour.RejectOnMatch, MatchOperator.Or, "return it == \"x\";");
 
+        // Act
+        var score = matcher.IsMatch(input).Score;
+
         // Assert
-        Check.That(matcher.IsMatch(input)).IsEqualTo(0.0d);
+        score.Should().Be(MatchScores.Mismatch);
     }
 
     [Fact]
@@ -55,12 +61,13 @@ public class CSharpCodeMatcherTests
             Name = "Test"
         };
 
-        // Act
         var matcher = new CSharpCodeMatcher("return it.Id > 1 && it.Name == \"Test\";");
-        double match = matcher.IsMatch(input);
+
+        // Act
+        var score = matcher.IsMatch(input).Score;
 
         // Assert
-        Assert.Equal(1.0, match);
+        score.Should().Be(MatchScores.Perfect);
     }
 
     [Fact]

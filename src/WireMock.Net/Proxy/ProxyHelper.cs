@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Linq;
 using System.Net.Http;
@@ -37,7 +39,19 @@ internal class ProxyHelper
         var requiredUri = new Uri(url);
 
         // Create HttpRequestMessage
-        var httpRequestMessage = HttpRequestMessageHelper.Create(requestMessage, url);
+        var replaceSettings = proxyAndRecordSettings.ReplaceSettings;
+        string proxyUrl;
+        if (replaceSettings is not null)
+        {
+            var stringComparison = replaceSettings.IgnoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            proxyUrl = url.Replace(replaceSettings.OldValue, replaceSettings.NewValue, stringComparison);
+        }
+        else
+        {
+            proxyUrl = url;
+        }
+
+        var httpRequestMessage = HttpRequestMessageHelper.Create(requestMessage, proxyUrl);
 
         // Call the URL
         var httpResponseMessage = await client.SendAsync(httpRequestMessage, HttpCompletionOption.ResponseContentRead).ConfigureAwait(false);
@@ -80,7 +94,7 @@ internal class ProxyHelper
         return (responseMessage, newMapping);
     }
 
-    private static bool Check<T>(ProxySaveMappingSetting<T>? saveMappingSetting, Func<bool> action)
+    private static bool Check<T>(ProxySaveMappingSetting<T>? saveMappingSetting, Func<bool> action) where T : notnull
     {
         var isMatch = saveMappingSetting is null || action();
         var matchBehaviour = saveMappingSetting?.MatchBehaviour ?? MatchBehaviour.AcceptOnMatch;

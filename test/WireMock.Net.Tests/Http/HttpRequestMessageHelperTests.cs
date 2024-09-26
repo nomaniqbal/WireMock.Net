@@ -1,7 +1,10 @@
-using NFluent;
+// Copyright © WireMock.Net
+
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
+using FluentAssertions;
+using NFluent;
 using WireMock.Http;
 using WireMock.Models;
 using WireMock.Types;
@@ -47,6 +50,26 @@ public class HttpRequestMessageHelperTests
     }
 
     [Fact]
+    public async Task HttpRequestMessageHelper_Create_TextPlain()
+    {
+        // Assign
+        var body = new BodyData
+        {
+            BodyAsString = "0123", // or 83 in decimal
+            BodyAsJson = 83,
+            DetectedBodyType = BodyType.Json,
+            DetectedBodyTypeFromContentType = BodyType.String
+        };
+        var request = new RequestMessage(new UrlDetails("http://localhost/foo"), "GET", ClientIp, body);
+
+        // Act
+        var message = HttpRequestMessageHelper.Create(request, "http://url");
+
+        // Assert
+        Check.That(await message.Content!.ReadAsStringAsync().ConfigureAwait(false)).Equals("0123");
+    }
+
+    [Fact]
     public async Task HttpRequestMessageHelper_Create_Json()
     {
         // Assign
@@ -61,7 +84,7 @@ public class HttpRequestMessageHelperTests
         var message = HttpRequestMessageHelper.Create(request, "http://url");
 
         // Assert
-        Check.That(await message.Content.ReadAsStringAsync().ConfigureAwait(false)).Equals("{\"x\":42}");
+        Check.That(await message.Content!.ReadAsStringAsync().ConfigureAwait(false)).Equals("{\"x\":42}");
     }
 
     [Fact]
@@ -159,5 +182,30 @@ public class HttpRequestMessageHelperTests
 
         // Assert
         Check.That(message.Content.Headers.GetValues("Content-Type")).ContainsExactly("application/xml; charset=Ascii");
+    }
+
+    [Theory]
+    [InlineData("HEAD", true)]
+    [InlineData("GET", false)]
+    [InlineData("PUT", false)]
+    [InlineData("POST", false)]
+    [InlineData("DELETE", false)]
+    [InlineData("TRACE", false)]
+    [InlineData("OPTIONS", false)]
+    [InlineData("CONNECT", false)]
+    [InlineData("PATCH", false)]
+    public void HttpRequestMessageHelper_Create_ContentLengthAllowedForMethod(string method, bool resultShouldBe)
+    {
+        // Arrange
+        var key = "Content-Length";
+        var value = 1234;
+        var headers = new Dictionary<string, string[]> { { key, new[] { "1234" } } };
+        var request = new RequestMessage(new UrlDetails("http://localhost/foo"), method, ClientIp, null, headers);
+
+        // Act
+        var message = HttpRequestMessageHelper.Create(request, "http://url");
+
+        // Assert
+        message.Content?.Headers.ContentLength.Should().Be(resultShouldBe ? value : null);
     }
 }

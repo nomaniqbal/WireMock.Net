@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -29,7 +31,7 @@ public class RequestMessageParamMatcher : IRequestMatcher
     /// <summary>
     /// Defines if the key should be matched using case-ignore.
     /// </summary>
-    public bool? IgnoreCase { get; }
+    public bool IgnoreCase { get; }
 
     /// <summary>
     /// The matchers.
@@ -54,7 +56,7 @@ public class RequestMessageParamMatcher : IRequestMatcher
     /// <param name="ignoreCase">Defines if the key should be matched using case-ignore.</param>
     /// <param name="values">The values.</param>
     public RequestMessageParamMatcher(MatchBehaviour matchBehaviour, string key, bool ignoreCase, params string[]? values) :
-        this(matchBehaviour, key, ignoreCase, values?.Select(value => new ExactMatcher(matchBehaviour, ignoreCase, false, MatchOperator.And, value)).Cast<IStringMatcher>().ToArray())
+        this(matchBehaviour, key, ignoreCase, values?.Select(value => new ExactMatcher(matchBehaviour, ignoreCase, MatchOperator.And, value)).Cast<IStringMatcher>().ToArray())
     {
     }
 
@@ -85,28 +87,22 @@ public class RequestMessageParamMatcher : IRequestMatcher
     /// <inheritdoc />
     public double GetMatchingScore(IRequestMessage requestMessage, IRequestMatchResult requestMatchResult)
     {
-        double score = MatchBehaviourHelper.Convert(MatchBehaviour, IsMatch(requestMessage));
-        return requestMatchResult.AddScore(GetType(), score);
+        var score = GetMatchScore(requestMessage);
+        return requestMatchResult.AddScore(GetType(), MatchBehaviourHelper.Convert(MatchBehaviour, score), null);
     }
 
-    private double IsMatch(IRequestMessage requestMessage)
+    private double GetMatchScore(IRequestMessage requestMessage)
     {
         if (Funcs != null)
         {
             return MatchScores.ToScore(requestMessage.Query != null && Funcs.Any(f => f(requestMessage.Query)));
         }
 
-        var valuesPresentInRequestMessage = ((RequestMessage)requestMessage).GetParameter(Key, IgnoreCase ?? false);
+        var valuesPresentInRequestMessage = ((RequestMessage)requestMessage).GetParameter(Key, IgnoreCase);
         if (valuesPresentInRequestMessage == null)
         {
             // Key is not present at all, just return Mismatch
             return MatchScores.Mismatch;
-        }
-
-        if (Matchers != null && Matchers.Any())
-        {
-            // Return the score based on Matchers and valuesPresentInRequestMessage
-            return CalculateScore(Matchers, valuesPresentInRequestMessage);
         }
 
         if (Matchers == null || !Matchers.Any())
@@ -115,10 +111,11 @@ public class RequestMessageParamMatcher : IRequestMatcher
             return MatchScores.Perfect;
         }
 
-        return MatchScores.Mismatch;
+        // Return the score based on Matchers and valuesPresentInRequestMessage
+        return CalculateScore(Matchers, valuesPresentInRequestMessage);
     }
 
-    private double CalculateScore(IReadOnlyList<IStringMatcher> matchers, WireMockList<string> valuesPresentInRequestMessage)
+    private static double CalculateScore(IReadOnlyList<IStringMatcher> matchers, WireMockList<string> valuesPresentInRequestMessage)
     {
         var total = new List<double>();
 
@@ -130,7 +127,7 @@ public class RequestMessageParamMatcher : IRequestMatcher
                 double score = 0d;
                 foreach (string valuePresentInRequestMessage in valuesPresentInRequestMessage)
                 {
-                    score += matcher.IsMatch(valuePresentInRequestMessage) / matcher.GetPatterns().Length;
+                    score += matcher.IsMatch(valuePresentInRequestMessage).Score / matcher.GetPatterns().Length;
                 }
 
                 total.Add(score);
@@ -140,11 +137,11 @@ public class RequestMessageParamMatcher : IRequestMatcher
         {
             foreach (string valuePresentInRequestMessage in valuesPresentInRequestMessage)
             {
-                double score = matchers.Max(m => m.IsMatch(valuePresentInRequestMessage));
+                var score = matchers.Max(m => m.IsMatch(valuePresentInRequestMessage).Score);
                 total.Add(score);
             }
         }
 
-        return total.Any() ? MatchScores.ToScore(total, MatchOperator.Average) : MatchScores.Mismatch;
+        return total.Any() ? MatchScores.ToScore(total, MatchOperator.Average) : default;
     }
 }

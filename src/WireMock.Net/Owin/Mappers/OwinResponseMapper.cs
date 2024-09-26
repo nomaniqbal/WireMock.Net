@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -13,6 +15,8 @@ using WireMock.Http;
 using WireMock.ResponseBuilders;
 using WireMock.Types;
 using Stef.Validation;
+using WireMock.Util;
+
 #if !USE_ASPNETCORE
 using IResponse = Microsoft.Owin.IOwinResponse;
 #else
@@ -33,13 +37,20 @@ namespace WireMock.Owin.Mappers
         private readonly Encoding _utf8NoBom = new UTF8Encoding(false);
 
         // https://msdn.microsoft.com/en-us/library/78h415ay(v=vs.110).aspx
-#if !USE_ASPNETCORE
-        private static readonly IDictionary<string, Action<IResponse, WireMockList<string>>> ResponseHeadersToFix = new Dictionary<string, Action<IResponse, WireMockList<string>>>(StringComparer.OrdinalIgnoreCase) {
-#else
-        private static readonly IDictionary<string, Action<IResponse, WireMockList<string>>> ResponseHeadersToFix = new Dictionary<string, Action<IResponse, WireMockList<string>>>(StringComparer.OrdinalIgnoreCase) {
-#endif
-            { HttpKnownHeaderNames.ContentType, (r, v) => r.ContentType = v.FirstOrDefault() }
-        };
+        private static readonly IDictionary<string, Action<IResponse, bool, WireMockList<string>>> ResponseHeadersToFix =
+            new Dictionary<string, Action<IResponse, bool, WireMockList<string>>>(StringComparer.OrdinalIgnoreCase)
+            {
+                { HttpKnownHeaderNames.ContentType, (r, _, v) => r.ContentType = v.FirstOrDefault() },
+                { HttpKnownHeaderNames.ContentLength, (r, hasBody, v) =>
+                    {
+                        // Only set the Content-Length header if the response does not have a body
+                        if (!hasBody && long.TryParse(v.FirstOrDefault(), out var contentLength))
+                        {
+                            r.ContentLength = contentLength;
+                        }
+                    }
+                }
+            };
 
         /// <summary>
         /// Constructor
@@ -50,7 +61,7 @@ namespace WireMock.Owin.Mappers
             _options = Guard.NotNull(options);
         }
 
-        /// <inheritdoc cref="IOwinResponseMapper.MapAsync"/>
+        /// <inheritdoc />
         public async Task MapAsync(IResponseMessage? responseMessage, IResponse response)
         {
             if (responseMessage == null)
@@ -62,11 +73,11 @@ namespace WireMock.Owin.Mappers
             switch (responseMessage.FaultType)
             {
                 case FaultType.EMPTY_RESPONSE:
-                    bytes = IsFault(responseMessage) ? new byte[0] : GetNormalBody(responseMessage);
+                    bytes = IsFault(responseMessage) ? EmptyArray<byte>.Value : await GetNormalBodyAsync(responseMessage).ConfigureAwait(false);
                     break;
 
                 case FaultType.MALFORMED_RESPONSE_CHUNK:
-                    bytes = GetNormalBody(responseMessage) ?? new byte[0];
+                    bytes = await GetNormalBodyAsync(responseMessage).ConfigureAwait(false) ?? EmptyArray<byte>.Value;
                     if (IsFault(responseMessage))
                     {
                         bytes = bytes.Take(bytes.Length / 2).Union(_randomizerBytes.Generate()).ToArray();
@@ -74,28 +85,26 @@ namespace WireMock.Owin.Mappers
                     break;
 
                 default:
-                    bytes = GetNormalBody(responseMessage);
+                    bytes = await GetNormalBodyAsync(responseMessage).ConfigureAwait(false);
                     break;
             }
 
             var statusCodeType = responseMessage.StatusCode?.GetType();
-            switch (statusCodeType)
+            if (statusCodeType != null)
             {
-                case { } typeAsIntOrEnum when typeAsIntOrEnum == typeof(int) || typeAsIntOrEnum == typeof(int?) || typeAsIntOrEnum.GetTypeInfo().IsEnum:
+                if (statusCodeType == typeof(int) || statusCodeType == typeof(int?) || statusCodeType.GetTypeInfo().IsEnum)
+                {
                     response.StatusCode = MapStatusCode((int)responseMessage.StatusCode!);
-                    break;
-
-                case { } typeAsString when typeAsString == typeof(string):
-                    // Note: this case will also match on null 
-                    int.TryParse(responseMessage.StatusCode as string, out int result);
-                    response.StatusCode = MapStatusCode(result);
-                    break;
-
-                default:
-                    break;
+                }
+                else if (statusCodeType == typeof(string))
+                {
+                    // Note: this case will also match on null
+                    int.TryParse(responseMessage.StatusCode as string, out var statusCodeTypeAsInt);
+                    response.StatusCode = MapStatusCode(statusCodeTypeAsInt);
+                }
             }
 
-            SetResponseHeaders(responseMessage, response);
+            SetResponseHeaders(responseMessage, bytes, response);
 
             if (bytes != null)
             {
@@ -108,6 +117,8 @@ namespace WireMock.Owin.Mappers
                     _options.Logger.Warn("Error writing response body. Exception : {0}", ex);
                 }
             }
+
+            SetResponseTrailingHeaders(responseMessage, response);
         }
 
         private int MapStatusCode(int code)
@@ -125,60 +136,97 @@ namespace WireMock.Owin.Mappers
             return responseMessage.FaultPercentage == null || _randomizerDouble.Generate() <= responseMessage.FaultPercentage;
         }
 
-        private byte[]? GetNormalBody(IResponseMessage responseMessage)
-        {
-            switch (responseMessage.BodyData?.DetectedBodyType)
+        private async Task<byte[]?> GetNormalBodyAsync(IResponseMessage responseMessage) {
+            var bodyData = responseMessage.BodyData;
+            switch (bodyData?.GetBodyType())
             {
                 case BodyType.String:
                 case BodyType.FormUrlEncoded:
-                    return (responseMessage.BodyData.Encoding ?? _utf8NoBom).GetBytes(responseMessage.BodyData.BodyAsString!);
+                    return (bodyData.Encoding ?? _utf8NoBom).GetBytes(bodyData.BodyAsString!);
 
                 case BodyType.Json:
-                    var formatting = responseMessage.BodyData.BodyAsJsonIndented == true
-                        ? Formatting.Indented
-                        : Formatting.None;
-                    string jsonBody = JsonConvert.SerializeObject(responseMessage.BodyData.BodyAsJson, new JsonSerializerSettings { Formatting = formatting, NullValueHandling = NullValueHandling.Ignore });
-                    return (responseMessage.BodyData.Encoding ?? _utf8NoBom).GetBytes(jsonBody);
+                    var formatting = bodyData.BodyAsJsonIndented == true ? Formatting.Indented : Formatting.None;
+                    var jsonBody = JsonConvert.SerializeObject(bodyData.BodyAsJson, new JsonSerializerSettings { Formatting = formatting, NullValueHandling = NullValueHandling.Ignore });
+                    return (bodyData.Encoding ?? _utf8NoBom).GetBytes(jsonBody);
+
+#if PROTOBUF
+                case BodyType.ProtoBuf:
+                    var protoDefinition = bodyData.ProtoDefinition?.Invoke().Text;
+                    return await ProtoBufUtils.GetProtoBufMessageWithHeaderAsync(protoDefinition, bodyData.ProtoBufMessageType, bodyData.BodyAsJson).ConfigureAwait(false);
+#endif
 
                 case BodyType.Bytes:
-                    return responseMessage.BodyData.BodyAsBytes;
+                    return bodyData.BodyAsBytes;
 
                 case BodyType.File:
-                    return _options.FileSystemHandler?.ReadResponseBodyAsFile(responseMessage.BodyData.BodyAsFile!);
+                    return _options.FileSystemHandler?.ReadResponseBodyAsFile(bodyData.BodyAsFile!);
+
+                case BodyType.MultiPart:
+                    _options.Logger.Warn("MultiPart body type is not handled!");
+                    break;
+
+                case BodyType.None:
+                    break;
             }
 
             return null;
         }
 
-        private static void SetResponseHeaders(IResponseMessage responseMessage, IResponse response)
+        private static void SetResponseHeaders(IResponseMessage responseMessage, byte[]? bytes, IResponse response)
         {
             // Force setting the Date header (#577)
             AppendResponseHeader(
                 response,
                 HttpKnownHeaderNames.Date,
-                new[]
-                {
-                    DateTime.UtcNow.ToString(CultureInfo.InvariantCulture.DateTimeFormat.RFC1123Pattern, CultureInfo.InvariantCulture)
-                });
+                [ DateTime.UtcNow.ToString(CultureInfo.InvariantCulture.DateTimeFormat.RFC1123Pattern, CultureInfo.InvariantCulture) ]
+            );
 
             // Set other headers
             foreach (var item in responseMessage.Headers!)
             {
                 var headerName = item.Key;
                 var value = item.Value;
-                if (ResponseHeadersToFix.ContainsKey(headerName))
+                if (ResponseHeadersToFix.TryGetValue(headerName, out var action))
                 {
-                    ResponseHeadersToFix[headerName]?.Invoke(response, value);
+                    action?.Invoke(response, bytes != null, value);
                 }
                 else
                 {
-                    // Check if this response header can be added (#148 and #227)
+                    // Check if this response header can be added (#148, #227 and #720)
                     if (!HttpKnownHeaderNames.IsRestrictedResponseHeader(headerName))
                     {
                         AppendResponseHeader(response, headerName, value.ToArray());
                     }
                 }
             }
+        }
+
+        private static void SetResponseTrailingHeaders(IResponseMessage responseMessage, IResponse response)
+        {
+            if (responseMessage.TrailingHeaders == null)
+            {
+                return;
+            }
+
+#if TRAILINGHEADERS
+            foreach (var item in responseMessage.TrailingHeaders)
+            {
+                var headerName = item.Key;
+                var value = item.Value;
+                if (ResponseHeadersToFix.TryGetValue(headerName, out var action))
+                {
+                    action?.Invoke(response, false, value);
+                }
+                else
+                {
+                    // Check if this trailing header can be added to the response
+                    if (response.SupportsTrailers() && !HttpKnownHeaderNames.IsRestrictedResponseHeader(headerName))
+                    {
+                        response.AppendTrailer(headerName, new Microsoft.Extensions.Primitives.StringValues(value.ToArray()));
+                    }
+                }
+            }
+#endif
         }
 
         private static void AppendResponseHeader(IResponse response, string headerName, string[] values)

@@ -1,5 +1,8 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Threading.Tasks;
+using Stef.Validation;
 using WireMock.Matchers.Request;
 using WireMock.Models;
 using WireMock.ResponseProviders;
@@ -31,7 +34,7 @@ public class Mapping : IMapping
     public int Priority { get; }
 
     /// <inheritdoc />
-    public string? Scenario { get; }
+    public string? Scenario { get; private set; }
 
     /// <inheritdoc />
     public string? ExecutionConditionState { get; }
@@ -67,13 +70,19 @@ public class Mapping : IMapping
     public IWebhook[]? Webhooks { get; }
 
     /// <inheritdoc />
-    public bool? UseWebhooksFireAndForget { get; set; }
+    public bool? UseWebhooksFireAndForget { get; }
 
     /// <inheritdoc />
     public ITimeSettings? TimeSettings { get; }
 
     /// <inheritdoc />
-    public object? Data { get; set; }
+    public object? Data { get; }
+
+    /// <inheritdoc />
+    public double? Probability { get; private set; }
+
+    /// <inheritdoc />
+    public IdOrText? ProtoDefinition { get; private set; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Mapping"/> class.
@@ -95,7 +104,8 @@ public class Mapping : IMapping
     /// <param name="useWebhooksFireAndForget">Use Fire and Forget for the defined webhook(s). [Optional]</param>
     /// <param name="timeSettings">The TimeSettings. [Optional]</param>
     /// <param name="data">The data object. [Optional]</param>
-    public Mapping(
+    public Mapping
+    (
         Guid guid,
         DateTime updatedAt,
         string? title,
@@ -112,7 +122,8 @@ public class Mapping : IMapping
         IWebhook[]? webhooks,
         bool? useWebhooksFireAndForget,
         ITimeSettings? timeSettings,
-        object? data)
+        object? data
+    )
     {
         Guid = guid;
         UpdatedAt = updatedAt;
@@ -133,13 +144,13 @@ public class Mapping : IMapping
         Data = data;
     }
 
-    /// <inheritdoc cref="IMapping.ProvideResponseAsync" />
+    /// <inheritdoc />
     public Task<(IResponseMessage Message, IMapping? Mapping)> ProvideResponseAsync(IRequestMessage requestMessage)
     {
         return Provider.ProvideResponseAsync(this, requestMessage, Settings);
     }
 
-    /// <inheritdoc cref="IMapping.GetRequestMatchResult" />
+    /// <inheritdoc />
     public IRequestMatchResult GetRequestMatchResult(IRequestMessage requestMessage, string? nextState)
     {
         var result = new RequestMatchResult();
@@ -161,5 +172,26 @@ public class Mapping : IMapping
         }
 
         return result;
+    }
+
+    /// <inheritdoc />
+    public IMapping WithProbability(double probability)
+    {
+        Probability = Guard.NotNull(probability);
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IMapping WithScenario(string scenario)
+    {
+        Scenario = Guard.NotNullOrWhiteSpace(scenario);
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IMapping WithProtoDefinition(IdOrText protoDefinition)
+    {
+        ProtoDefinition = protoDefinition;
+        return this;
     }
 }

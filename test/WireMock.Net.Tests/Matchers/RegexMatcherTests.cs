@@ -1,3 +1,5 @@
+// Copyright © WireMock.Net
+
 using System;
 using FluentAssertions;
 using NFluent;
@@ -53,7 +55,7 @@ public class RegexMatcherTests
         var matcher = new RegexMatcher("H.*o");
 
         // Act
-        double result = matcher.IsMatch("Hello world!");
+        double result = matcher.IsMatch("Hello world!").Score;
 
         // Assert
         Check.That(result).IsEqualTo(1.0d);
@@ -66,7 +68,7 @@ public class RegexMatcherTests
         var matcher = new RegexMatcher("H.*o");
 
         // Act
-        double result = matcher.IsMatch(null);
+        double result = matcher.IsMatch(null).Score;
 
         // Assert
         Check.That(result).IsEqualTo(0.0d);
@@ -79,7 +81,7 @@ public class RegexMatcherTests
         var matcher = new RegexMatcher(@"\GUIDB", true);
 
         // Act
-        double result = matcher.IsMatch(Guid.NewGuid().ToString("B"));
+        double result = matcher.IsMatch(Guid.NewGuid().ToString("B")).Score;
 
         // Assert
         result.Should().Be(1.0);
@@ -89,10 +91,10 @@ public class RegexMatcherTests
     public void RegexMatcher_IsMatch_Regex_Guid()
     {
         // Assign
-        var matcher = new RegexMatcher(@"\GUIDB", true, false, false);
+        var matcher = new RegexMatcher(@"\GUIDB", true, false);
 
         // Act
-        double result = matcher.IsMatch(Guid.NewGuid().ToString("B"));
+        double result = matcher.IsMatch(Guid.NewGuid().ToString("B")).Score;
 
         // Assert
         result.Should().Be(0);
@@ -105,7 +107,7 @@ public class RegexMatcherTests
         var matcher = new RegexMatcher("H.*o", true);
 
         // Act
-        double result = matcher.IsMatch("hello");
+        double result = matcher.IsMatch("hello").Score;
 
         // Assert
         Check.That(result).IsEqualTo(1.0d);
@@ -118,7 +120,7 @@ public class RegexMatcherTests
         var matcher = new RegexMatcher(MatchBehaviour.RejectOnMatch, "h.*o");
 
         // Act
-        double result = matcher.IsMatch("hello");
+        double result = matcher.IsMatch("hello").Score;
 
         // Assert
         Check.That(result).IsEqualTo(0.0);

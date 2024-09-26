@@ -1,9 +1,12 @@
+// Copyright © WireMock.Net
+
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using WireMock.Logging;
@@ -42,8 +45,99 @@ namespace WireMock.Net.ConsoleApplication
 
     public static class MainApp
     {
+        private const string ProtoDefinition = @"
+syntax = ""proto3"";
+
+package greet;
+
+service Greeter {
+  rpc SayHello (HelloRequest) returns (HelloReply);
+}
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloReply {
+  string message = 1;
+}
+";
+
+        private const string TestSchema = @"
+  scalar DateTime
+  scalar MyCustomScalar
+
+  input MessageInput {
+    content: String
+    author: String
+  }
+
+  type Message {
+    id: ID!
+    content: String
+    author: String
+  }
+
+  type Mutation {
+    createMessage(input: MessageInput): Message
+    createAnotherMessage(x: MyCustomScalar, dt: DateTime): Message
+    updateMessage(id: ID!, input: MessageInput): Message
+  }
+
+  type Query {
+   greeting:String
+   students:[Student]
+   studentById(id:ID!):Student
+  }
+
+  type Student {
+   id:ID!
+   firstName:String
+   lastName:String
+   fullName:String 
+  }";
+
+        private static void RunOnLocal()
+        {
+            try
+            {
+                var server = WireMockServer.Start(new WireMockServerSettings
+                {
+                    Port = 9091,
+                    StartAdminInterface = true,
+                    Logger = new WireMockConsoleLogger()
+                });
+                System.Console.WriteLine(string.Join(", ", server.Urls));
+
+                var requestJson = new { PricingContext = new { Market = "USA" } };
+                var responseJson = new { Market = "{{JsonPath.SelectToken request.body \"$.PricingContext.Market\"}}" };
+                server
+                    .Given(Request.Create()
+                        //.WithBody(new JsonMatcher(requestJson))
+                        .WithBodyAsJson(requestJson)
+                        .WithPath("/pricing")
+                        .UsingPost()
+                    )
+                    .RespondWith(Response.Create()
+                        .WithHeader("Content-Type", "application/json")
+                        .WithBodyAsJson(responseJson)
+                        .WithTransformer(true)
+                    );
+
+                System.Console.WriteLine("Press any key to stop...");
+                System.Console.ReadKey();
+                server.Stop();
+            }
+            catch (Exception e)
+            {
+                System.Console.WriteLine(e);
+            }
+        }
+
         public static void Run()
         {
+            RunOnLocal();
+
             var mappingBuilder = new MappingBuilder();
             mappingBuilder
                 .Given(Request
@@ -81,17 +175,14 @@ namespace WireMock.Net.ConsoleApplication
                     .WithBodyAsJson(rm => todos[int.Parse(rm.Query!["id"].ToString())])
                 );
 
-            var httpClient = server.CreateClient();
-            //server.Stop();
-
-            var httpAndHttpsWithPort = WireMockServer.Start(new WireMockServerSettings
+            using var httpAndHttpsWithPort = WireMockServer.Start(new WireMockServerSettings
             {
                 HostingScheme = HostingScheme.HttpAndHttps,
                 Port = 12399
             });
             httpAndHttpsWithPort.Stop();
 
-            var httpAndHttpsFree = WireMockServer.Start(new WireMockServerSettings
+            using var httpAndHttpsFree = WireMockServer.Start(new WireMockServerSettings
             {
                 HostingScheme = HostingScheme.HttpAndHttps
             });
@@ -100,13 +191,17 @@ namespace WireMock.Net.ConsoleApplication
             string url1 = "http://localhost:9091/";
             string url2 = "http://localhost:9092/";
             string url3 = "https://localhost:9443/";
+            string urlGrpc = "grpc://localhost:9093/";
+            string urlGrpcSSL = "grpcs://localhost:9094/";
 
             server = WireMockServer.Start(new WireMockServerSettings
             {
+                // CorsPolicyOptions = CorsPolicyOptions.AllowAll,
                 AllowCSharpCodeMatcher = true,
-                Urls = new[] { url1, url2, url3 },
+                Urls = new[] { url1, url2, url3, urlGrpc, urlGrpcSSL },
                 StartAdminInterface = true,
                 ReadStaticMappings = true,
+                SaveUnmatchedRequests = true,
                 WatchStaticMappings = true,
                 WatchStaticMappingsInSubdirectories = true,
                 //ProxyAndRecordSettings = new ProxyAndRecordSettings
@@ -135,8 +230,118 @@ namespace WireMock.Net.ConsoleApplication
             server.SetBasicAuthentication("a", "b");
             //server.SetAzureADAuthentication("6c2a4722-f3b9-4970-b8fc-fac41e29stef", "8587fde1-7824-42c7-8592-faf92b04stef");
 
-            // server.AllowPartialMapping();
+            //var http = new HttpClient();
+            //var response = await http.GetAsync($"{_wireMockServer.Url}/pricing");
+            //var value = await response.Content.ReadAsStringAsync();
 
+#if PROTOBUF
+            var protoBufJsonMatcher = new JsonPartialWildcardMatcher(new { name = "*" });
+            server
+                .Given(Request.Create()
+                    .UsingPost()
+                    .WithHttpVersion("2")
+                    .WithPath("/grpc/greet.Greeter/SayHello")
+                    .WithBodyAsProtoBuf(ProtoDefinition, "greet.HelloRequest", protoBufJsonMatcher)
+                )
+                .RespondWith(Response.Create()
+                    .WithHeader("Content-Type", "application/grpc")
+                    .WithBodyAsProtoBuf(ProtoDefinition, "greet.HelloReply",
+                        new
+                        {
+                            message = "hello {{request.BodyAsJson.name}}"
+                        }
+                    )
+                    .WithTrailingHeader("grpc-status", "0")
+                    .WithTransformer()
+                );
+
+            server
+                .Given(Request.Create()
+                    .UsingPost()
+                    .WithHttpVersion("2")
+                    .WithPath("/grpc2/greet.Greeter/SayHello")
+                    .WithBodyAsProtoBuf("greet.HelloRequest", protoBufJsonMatcher)
+                )
+                .WithProtoDefinition(ProtoDefinition)
+                .RespondWith(Response.Create()
+                    .WithHeader("Content-Type", "application/grpc")
+                    .WithBodyAsProtoBuf("greet.HelloReply",
+                        new
+                        {
+                            message = "hello {{request.BodyAsJson.name}}"
+                        }
+                    )
+                    .WithTrailingHeader("grpc-status", "0")
+                    .WithTransformer()
+                );
+
+            server
+                .AddProtoDefinition("my-greeter", ProtoDefinition)
+                .Given(Request.Create()
+                    .UsingPost()
+                    .WithPath("/grpc3/greet.Greeter/SayHello")
+                    .WithBodyAsProtoBuf("greet.HelloRequest", protoBufJsonMatcher)
+                )
+                .WithProtoDefinition("my-greeter")
+                .RespondWith(Response.Create()
+                    .WithHeader("Content-Type", "application/grpc")
+                    .WithBodyAsProtoBuf("greet.HelloReply",
+                        new
+                        {
+                            message = "hello {{request.BodyAsJson.name}}"
+                        }
+                    )
+                    .WithTrailingHeader("grpc-status", "0")
+                    .WithTransformer()
+                );
+#endif
+
+#if GRAPHQL
+            var customScalars = new Dictionary<string, Type> { { "MyCustomScalar", typeof(int) } };
+            server
+                .Given(Request.Create()
+                    .WithPath("/graphql")
+                    .UsingPost()
+                    .WithBodyAsGraphQL(TestSchema, customScalars)
+                )
+                .RespondWith(Response.Create()
+                    .WithBody("GraphQL is ok")
+                );
+#endif
+
+#if MIMEKIT
+            var textPlainContentTypeMatcher = new ContentTypeMatcher("text/plain");
+            var textPlainContentMatcher = new ExactMatcher("This is some plain text");
+            var textPlainMatcher = new MimePartMatcher(MatchBehaviour.AcceptOnMatch, textPlainContentTypeMatcher, null, null, textPlainContentMatcher);
+
+            var textJsonContentTypeMatcher = new ContentTypeMatcher("text/json");
+            var textJsonContentMatcher = new JsonMatcher(new { Key = "Value" }, true);
+            var textJsonMatcher = new MimePartMatcher(MatchBehaviour.AcceptOnMatch, textJsonContentTypeMatcher, null, null, textJsonContentMatcher);
+
+            var imagePngContentTypeMatcher = new ContentTypeMatcher("image/png");
+            var imagePngContentDispositionMatcher = new ExactMatcher("attachment; filename=\"image.png\"");
+            var imagePngContentTransferEncodingMatcher = new ExactMatcher("base64");
+            var imagePngContentMatcher = new ExactObjectMatcher(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACAgMAAAAP2OW3AAAADFBMVEX/tID/vpH/pWX/sHidUyjlAAAADElEQVR4XmMQYNgAAADkAMHebX3mAAAAAElFTkSuQmCC"));
+            var imagePngMatcher = new MimePartMatcher(MatchBehaviour.AcceptOnMatch, imagePngContentTypeMatcher, imagePngContentDispositionMatcher, imagePngContentTransferEncodingMatcher, imagePngContentMatcher);
+
+            var matchers = new IMatcher[]
+            {
+                textPlainMatcher,
+                textJsonMatcher,
+                imagePngMatcher
+            };
+
+            server
+                .Given(Request.Create()
+                    .WithPath("/multipart")
+                    .UsingPost()
+                    .WithMultiPart(matchers)
+                )
+                .WithGuid("b9c82182-e469-41da-bcaf-b6e3157fefdb")
+                .RespondWith(Response.Create()
+                    .WithBody("MultiPart is ok")
+                );
+#endif
             // 400 ms
             server
                 .Given(Request.Create()
@@ -160,6 +365,14 @@ namespace WireMock.Net.ConsoleApplication
                         .WithHeader("Content-Type", "text/plain")
                 );
 
+            server
+                .Given(Request.Create()
+                    .UsingHead()
+                    .WithPath("/cl")
+                )
+                .RespondWith(Response.Create()
+                    .WithHeader("Content-Length", "42")
+                );
 
             server
                 .Given(Request.Create()
@@ -243,6 +456,23 @@ namespace WireMock.Net.ConsoleApplication
                 .RespondWith(Response.Create()
                     .WithProxy(new ProxyAndRecordSettings { Url = "http://localhost:9999", ExcludedHeaders = new[] { "Keep-Alive" } })
                     .WithHeader("Keep-Alive-Test", "stef")
+                );
+
+            server
+                .Given(Request.Create()
+                    .UsingGet()
+                    .WithPath("/proxy-replace")
+                )
+                .RespondWith(Response.Create()
+                    .WithProxy(new ProxyAndRecordSettings
+                    {
+                        Url = "http://localhost:9999",
+                        ReplaceSettings = new ProxyUrlReplaceSettings
+                        {
+                            OldValue = "old",
+                            NewValue = "new"
+                        }
+                    })
                 );
 
             server
@@ -676,8 +906,9 @@ namespace WireMock.Net.ConsoleApplication
                 }));
 
             server.Given(Request.Create().WithPath(new WildcardMatcher("/multi-webhook", true)).UsingPost())
-                .WithWebhook(new[] {
-                    new Webhook()
+                .WithWebhook
+                (
+                    new Webhook
                     {
                         Request = new WebhookRequest
                         {
@@ -685,12 +916,13 @@ namespace WireMock.Net.ConsoleApplication
                             Method = "post",
                             BodyData = new BodyData
                             {
-                                BodyAsString = "OK 1!", DetectedBodyType = BodyType.String
+                                BodyAsString = "OK 1!",
+                                DetectedBodyType = BodyType.String
                             },
                             Delay = 1000
                         }
                     },
-                    new Webhook()
+                    new Webhook
                     {
                         Request = new WebhookRequest
                         {
@@ -705,7 +937,7 @@ namespace WireMock.Net.ConsoleApplication
                             MaximumRandomDelay = 7000
                         }
                     }
-                })
+                )
                 .WithWebhookFireAndForget(true)
                 .RespondWith(Response.Create().WithBody("a-response"));
 
